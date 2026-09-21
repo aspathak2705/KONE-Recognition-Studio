@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.health import router as health_router
+from app.api.excel import router as excel_router
+from app.api.templates import router as templates_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -18,3 +20,5 @@ if settings.BACKEND_CORS_ORIGINS:
     )
 
 app.include_router(health_router)
+app.include_router(excel_router)
+app.include_router(templates_router)

@@ -1,7 +1,7 @@
 import React from "react";
-import { LayoutDashboard, Award, FileSpreadsheet, Settings } from "lucide-react";
+import { LayoutDashboard, Award, FileSpreadsheet, Settings, FileUp } from "lucide-react";
 
-export type NavTab = "dashboard" | "projects" | "templates" | "settings";
+export type NavTab = "dashboard" | "import" | "templates" | "projects" | "settings";
 
 interface AppShellProps {
   activeTab: NavTab;
@@ -13,9 +13,10 @@ interface AppShellProps {
 export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppShellProps) {
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, disabled: false },
+    { id: "import", label: "Excel Import", icon: FileUp, disabled: false },
+    { id: "templates", label: "Templates", icon: FileSpreadsheet, disabled: false },
     { id: "projects", label: "Recognition Projects", icon: Award, disabled: false },
-    { id: "templates", label: "Templates (Phase 1)", icon: FileSpreadsheet, disabled: true },
-    { id: "settings", label: "Settings (Phase 1)", icon: Settings, disabled: true },
+    { id: "settings", label: "Settings (Phase 2)", icon: Settings, disabled: true },
   ];
 
   return (
@@ -68,8 +69,8 @@ export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppSh
         {/* Scope Note */}
         <div className="p-4 border-t border-sidebar-border">
           <div className="p-3 rounded-md bg-muted/60 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Phase 0 — Foundation</p>
-            <p>Master PowerPoint newspaper template deferred until delivery.</p>
+            <p className="font-medium text-foreground">Phase 1 — Data & Templates</p>
+            <p>Excel validation & PowerPoint inspection active.</p>
           </div>
         </div>
       </aside>
@@ -89,7 +90,7 @@ export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppSh
 
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-              Phase 0 Shell
+              Phase 1 Active
             </span>
             <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
               HR

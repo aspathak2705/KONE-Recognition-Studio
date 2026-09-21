@@ -1,16 +1,16 @@
-# KONE Recognition Automation
+# KONE Recognition Studio
 
 Internal application for generating quarterly employee recognition presentations and posters from structured Excel data into KONE-approved PowerPoint formats.
 
 ## Development Phase
 
-**Current Phase**: `Phase 0 — Project Foundation & Architecture Setup`
+**Current Phase**: `Phase 1 — Excel Intelligence, Validation, and PowerPoint Template Inspection`
 
 ## Tech Stack
 
-- **Backend**: Python, FastAPI, Pydantic, Uvicorn
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS v4
-- **Future Generation Layer**: `python-pptx`, `openpyxl` (Deferred to Phase 1)
+- **Backend**: Python, FastAPI, Pydantic, Uvicorn, openpyxl, python-pptx, pytest
+- **Frontend**: React, TypeScript, Vite, Tailwind CSS v4, Lucide React
+- **Future Generation Layer**: `python-pptx` presentation builder engine (Deferred to Phase 2)
 
 ---
 
@@ -32,18 +32,16 @@ venv\Scripts\activate
 # source venv/bin/activate
 
 pip install -r requirements.txt
+
+# Run backend server
 uvicorn app.main:app --reload --port 8000
 ```
 
-Verify backend health check at `http://127.0.0.1:8000/health`.
-
-Response:
-```json
-{
-  "status": "ok",
-  "service": "kone-recognition-automation"
-}
-```
+Verify backend endpoints:
+- Health check: `GET http://127.0.0.1:8000/health`
+- Excel schema spec: `GET http://127.0.0.1:8000/api/recognitions/schema`
+- Validate Excel upload: `POST http://127.0.0.1:8000/api/recognitions/validate-excel`
+- Inspect PowerPoint template: `POST http://127.0.0.1:8000/api/templates/inspect`
 
 ### 2. Frontend Setup
 
@@ -55,48 +53,37 @@ npm run dev
 
 Open `http://localhost:5173` in your browser.
 
+### 3. Run Automated Tests
+
+```bash
+# Run all backend unit & integration tests
+$env:PYTHONPATH="backend"; python -m pytest backend/tests
+
+# Run frontend TypeScript type checks & production build
+cd frontend
+npm run build
+```
+
 ---
 
-## Project Structure
+## Phase 1 Feature Summary
 
-```
-KONE Recognition Studio/
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── core/
-│   │   │   └── config.py
-│   │   └── api/
-│   │       └── health.py
-│   ├── tests/
-│   │   └── test_health.py
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   └── AppShell.tsx
-│   │   ├── pages/
-│   │   │   ├── Dashboard.tsx
-│   │   │   └── RecognitionProjects.tsx
-│   │   ├── App.tsx
-│   │   ├── index.css
-│   │   └── main.tsx
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── vite.config.ts
-│
-├── templates/
-│   └── README.md
-├── docs/
-│   └── architecture.md
-├── .env.example
-├── .gitignore
-└── README.md
-```
+1. **Excel Parsing & Schema Validation**:
+   - Parses `.xlsx` workbooks using `openpyxl`.
+   - Supports canonical headers: `employee_name`, `designation`, `branch`, `award_name` (with flexible aliases like `name`, `role`, `city`, `award`).
+   - Identifies empty cell values, missing required headers, corrupt workbooks, and duplicate records.
+   - Returns structured JSON validation feedback with row-level error reporting.
+
+2. **PowerPoint Template Inspection**:
+   - Inspects master PowerPoint templates (`.pptx`) using `python-pptx`.
+   - Extracts presentation metadata (slide count, slide dimensions, aspect ratio).
+   - Analyzes slide-level text frames, shape types, shape positions, and placeholder counts without modifying the original template file.
+
+3. **Safe Local File Storage**:
+   - Stores uploaded files under `storage/uploads/excel` and `storage/uploads/templates` using UUID filenames to prevent path traversal.
 
 ---
 
 ## Separation from AutoHR
 
-This project is completely separate from AutoHR. It reuses only design tokens (KONE Blue aesthetic) for visual consistency across internal tools. No database models, auth routes, or business logic are shared.
+This project is completely separate from AutoHR. It reuses only visual design tokens (KONE Blue aesthetic) for visual consistency across internal tools. No database models, auth routes, or business logic are shared.

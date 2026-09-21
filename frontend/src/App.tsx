@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { AppShell, NavTab } from "./components/AppShell";
 import { Dashboard } from "./pages/Dashboard";
+import { ExcelImport } from "./pages/ExcelImport";
+import { TemplateManager } from "./pages/TemplateManager";
 import { RecognitionProjects } from "./pages/RecognitionProjects";
 
 export function App() {
@@ -8,8 +10,9 @@ export function App() {
 
   const pageTitles: Record<NavTab, string> = {
     dashboard: "Dashboard",
+    import: "Excel Import",
+    templates: "Template Inspector",
     projects: "Recognition Projects",
-    templates: "Templates",
     settings: "Settings",
   };
 
@@ -20,8 +23,13 @@ export function App() {
       pageTitle={pageTitles[activeTab]}
     >
       {activeTab === "dashboard" && (
-        <Dashboard onNavigateToProjects={() => setActiveTab("projects")} />
+        <Dashboard
+          onNavigateToImport={() => setActiveTab("import")}
+          onNavigateToTemplates={() => setActiveTab("templates")}
+        />
       )}
+      {activeTab === "import" && <ExcelImport />}
+      {activeTab === "templates" && <TemplateManager />}
       {activeTab === "projects" && <RecognitionProjects />}
     </AppShell>
   );
