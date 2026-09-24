@@ -52,6 +52,18 @@ def test_missing_header():
     assert "Missing required columns" in res.errors[0].message
 
 
+def test_duplicate_headers():
+    headers = ["employee_name", "employee_name", "designation", "branch", "award_name"]
+    rows = [["Alice", "Alice", "Engineer", "Pune", "Star Performer"]]
+    content = create_mock_excel(headers, rows)
+    res = parse_and_validate_excel(content, "test.xlsx")
+
+    # Second employee_name should be ignored safely without overwriting the map
+    assert res.valid is True
+    assert res.records[0].employee_name == "Alice"
+
+
+
 def test_missing_cell_value():
     headers = ["employee_name", "designation", "branch", "award_name"]
     rows = [

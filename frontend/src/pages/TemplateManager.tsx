@@ -128,10 +128,10 @@ export function TemplateManager() {
                               <td className="px-3 py-2 font-medium font-mono text-primary">{s.shape_name}</td>
                               <td className="px-3 py-2 text-muted-foreground">{s.shape_type}</td>
                               <td className="px-3 py-2 font-mono text-muted-foreground">
-                                {s.left_inches}", {s.top_inches}"
+                                {s.left_inches}in, {s.top_inches}in
                               </td>
                               <td className="px-3 py-2 font-mono text-muted-foreground">
-                                {s.width_inches}" × {s.height_inches}"
+                                {s.width_inches}in × {s.height_inches}in
                               </td>
                               <td className="px-3 py-2 text-foreground font-sans truncate max-w-xs">
                                 {s.text || <span className="text-muted-foreground/40 italic">(empty frame)</span>}

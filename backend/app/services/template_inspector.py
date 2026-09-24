@@ -48,14 +48,29 @@ def inspect_powerpoint_template(file_content: bytes, filename: str) -> TemplateI
 
     slides_info: List[SlideInfo] = []
     total_placeholders = 0
+    total_shapes = 0
+    total_text_shapes = 0
+    total_tables = 0
+    total_groups = 0
 
-    for idx, slide in enumerate(prs.slides, start=1):
-        text_shapes: List[TextShapeInfo] = []
-        shape_count = len(slide.shapes)
-        placeholder_count = len(slide.placeholders)
-        total_placeholders += placeholder_count
+    def process_shape_list(shapes, text_shapes_list, stats_dict):
+        for shape in shapes:
+            stats_dict["total_shapes"] += 1
 
-        for shape in slide.shapes:
+            # Check if group shape
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                stats_dict["total_groups"] += 1
+                try:
+                    process_shape_list(shape.shapes, text_shapes_list, stats_dict)
+                except Exception:
+                    pass
+                continue
+
+            # Check if table
+            if shape.has_table:
+                stats_dict["total_tables"] += 1
+                continue
+
             is_text = shape.has_text_frame
             text_content = shape.text.strip() if is_text and shape.text else ""
             
@@ -68,10 +83,11 @@ def inspect_powerpoint_template(file_content: bytes, filename: str) -> TemplateI
                     ph_type_str = "PLACEHOLDER"
 
             if is_text or is_ph:
+                stats_dict["total_text_shapes"] += 1
                 shape_name = shape.name or f"Shape_{shape.shape_id}"
                 shape_type_str = str(shape.shape_type) if hasattr(shape, "shape_type") else "TEXT"
 
-                text_shapes.append(
+                text_shapes_list.append(
                     TextShapeInfo(
                         shape_name=shape_name,
                         shape_type=shape_type_str,
@@ -80,24 +96,56 @@ def inspect_powerpoint_template(file_content: bytes, filename: str) -> TemplateI
                         top_inches=round(shape.top / EMU_PER_INCH, 2),
                         width_inches=round(shape.width / EMU_PER_INCH, 2),
                         height_inches=round(shape.height / EMU_PER_INCH, 2),
+                        unit="inches",
                         is_placeholder=is_ph,
                         placeholder_type=ph_type_str,
                     )
                 )
 
+    for idx, slide in enumerate(prs.slides, start=1):
+        text_shapes: List[TextShapeInfo] = []
+        shape_count = len(slide.shapes)
+        placeholder_count = len(slide.placeholders)
+        total_placeholders += placeholder_count
+
+        slide_stats = {
+            "total_shapes": 0,
+            "total_text_shapes": 0,
+            "total_tables": 0,
+            "total_groups": 0,
+        }
+
+        process_shape_list(slide.shapes, text_shapes, slide_stats)
+
+        total_shapes += slide_stats["total_shapes"]
+        total_text_shapes += slide_stats["total_text_shapes"]
+        total_tables += slide_stats["total_tables"]
+        total_groups += slide_stats["total_groups"]
+
         slides_info.append(
             SlideInfo(
                 slide_number=idx,
-                shape_count=shape_count,
+                shape_count=slide_stats["total_shapes"],
                 text_shapes=text_shapes,
                 placeholders_count=placeholder_count,
+                tables_count=slide_stats["total_tables"],
+                groups_count=slide_stats["total_groups"],
             )
         )
 
     if total_placeholders == 0:
         warnings.append(
-            "No standard PowerPoint placeholders were found. Newspaper layout elements may use custom text boxes."
+            "No standard PowerPoint placeholders found. Template elements rely on text shapes or custom frames."
         )
+
+    if total_groups > 0:
+        warnings.append(
+            f"Found {total_groups} grouped shape(s). Grouped shapes were recursively inspected for text frames."
+        )
+
+    warnings.append(
+        "No dynamic field mapping established yet. Manual mapping is required before Phase 2 generation."
+    )
 
     if len(slides_info) == 0:
         warnings.append("Presentation contains no slides.")
@@ -109,7 +157,14 @@ def inspect_powerpoint_template(file_content: bytes, filename: str) -> TemplateI
         slide_count=len(slides_info),
         slide_width_inches=width_in,
         slide_height_inches=height_in,
+        unit="inches",
         aspect_ratio=aspect_ratio,
+        total_shapes_count=total_shapes,
+        total_text_shapes_count=total_text_shapes,
+        total_placeholders_count=total_placeholders,
+        total_tables_count=total_tables,
+        total_groups_count=total_groups,
         slides=slides_info,
         warnings=warnings,
     )
+

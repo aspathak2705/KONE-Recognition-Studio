@@ -26,11 +26,14 @@ def test_pptx_inspection():
     assert res.slide_count == 1
     assert res.slide_width_inches > 0
     assert res.slide_height_inches > 0
+    assert res.unit == "inches"
     assert res.aspect_ratio in ["16:9", "4:3"]
     assert len(res.slides) == 1
     assert res.slides[0].placeholders_count == 2
     assert len(res.slides[0].text_shapes) >= 2
     assert res.slides[0].text_shapes[0].text == "Sample Presentation Title"
+    assert any("No dynamic field mapping" in w for w in res.warnings)
+
 
 
 def test_corrupted_pptx():

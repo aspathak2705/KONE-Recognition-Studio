@@ -21,6 +21,7 @@ class ValidationErrorItem(BaseModel):
 class ExcelValidationResponse(BaseModel):
     valid: bool
     filename: str
+    file_id: Optional[str] = None
     total_rows: int
     valid_rows: int
     invalid_rows: int

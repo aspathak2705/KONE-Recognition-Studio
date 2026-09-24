@@ -28,7 +28,8 @@ def test_validate_excel_endpoint_valid():
     assert data["valid"] is True
     assert data["total_rows"] == 1
     assert data["records"][0]["employee_name"] == "John Doe"
-    assert data["saved_path"] is not None
+    assert data["file_id"] is not None
+    assert data["saved_path"] is None
 
 
 def test_validate_excel_endpoint_invalid_ext():
@@ -47,4 +48,6 @@ def test_inspect_template_endpoint_valid():
     data = res.json()
     assert data["valid"] is True
     assert data["slide_count"] == 1
-    assert data["saved_path"] is not None
+    assert data["template_id"] is not None
+    assert data["saved_path"] is None
+
