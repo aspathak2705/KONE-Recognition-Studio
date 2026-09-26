@@ -131,3 +131,71 @@ def test_archive_template(tmp_registry):
 
     all_with_archived = tmp_registry.list_templates(include_archived=True)
     assert len(all_with_archived) == 1
+
+
+def test_corrupt_pptx_registration_fails(tmp_registry):
+    corrupt_bytes = b"Not a real PPTX presentation binary content"
+    with pytest.raises(Exception) as exc_info:
+        tmp_registry.register_or_update_template(
+            name="Corrupt Template",
+            content=corrupt_bytes,
+            filename="corrupt.pptx",
+        )
+    assert "registration failed" in str(exc_info.value.detail).lower()
+
+
+def test_version_immutability(tmp_registry):
+    content1 = create_mock_pptx_bytes("Original v1 text")
+    content2 = create_mock_pptx_bytes("Modified v2 text")
+
+    res1 = tmp_registry.register_or_update_template(
+        name="Immutable Test",
+        content=content1,
+        filename="v1.pptx",
+    )
+
+    mapping_v1 = FieldMappingConfig(
+        employee_name=FieldMappingDetail(shape_name="EmployeeName", required=True)
+    )
+    tmp_registry.update_template_mapping(res1.template.template_id, mapping_v1, version_number=1)
+
+    res2 = tmp_registry.register_or_update_template(
+        name="Immutable Test",
+        content=content2,
+        filename="v2.pptx",
+        existing_template_id=res1.template.template_id,
+    )
+
+    mapping_v2 = FieldMappingConfig(
+        employee_name=FieldMappingDetail(shape_name="EmployeeName_V2", required=True)
+    )
+    tmp_registry.update_template_mapping(res1.template.template_id, mapping_v2, version_number=2)
+
+    # Reload from disk
+    meta = tmp_registry.get_template(res1.template.template_id)
+    assert len(meta.versions) == 2
+    assert meta.versions[0].mapping_config.employee_name.shape_name == "EmployeeName"
+    assert meta.versions[1].mapping_config.employee_name.shape_name == "EmployeeName_V2"
+    assert meta.versions[0].file_hash != meta.versions[1].file_hash
+
+
+def test_registry_restart_persistence(tmp_path):
+    reg_dir = tmp_path / "persistent_templates"
+    reg1 = TemplateRegistryService(registry_dir=reg_dir)
+
+    content = create_mock_pptx_bytes("Restart persistence test")
+    res = reg1.register_or_update_template(
+        name="Persistent Template",
+        content=content,
+        filename="persistent.pptx",
+    )
+
+    # Instantiate new TemplateRegistryService reading from same directory (simulating restart)
+    reg2 = TemplateRegistryService(registry_dir=reg_dir)
+    reloaded = reg2.get_template(res.template.template_id)
+
+    assert reloaded is not None
+    assert reloaded.name == "Persistent Template"
+    assert reloaded.file_hash == res.template.file_hash
+    assert reloaded.generation_readiness == res.template.generation_readiness
+

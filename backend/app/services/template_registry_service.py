@@ -128,6 +128,9 @@ class TemplateRegistryService:
 
             # Perform inspection ONCE for new binary
             inspection = inspect_powerpoint_template(content, filename)
+            if not inspection.valid:
+                err_msg = "; ".join(inspection.warnings) if inspection.warnings else "Corrupted or invalid PowerPoint presentation."
+                raise HTTPException(status_code=400, detail=f"New version registration failed: {err_msg}")
             inspection.template_id = template_id
 
             # Auto-suggest mapping for new version
@@ -177,11 +180,14 @@ class TemplateRegistryService:
             )
 
         # 3. Create brand new Template
+        inspection = inspect_powerpoint_template(content, filename)
+        if not inspection.valid:
+            err_msg = "; ".join(inspection.warnings) if inspection.warnings else "Corrupted or invalid PowerPoint presentation."
+            raise HTTPException(status_code=400, detail=f"Template registration failed: {err_msg}")
+
         template_id = uuid.uuid4().hex
         tpl_dir = self._get_template_dir(template_id)
         tpl_dir.mkdir(parents=True, exist_ok=True)
-
-        inspection = inspect_powerpoint_template(content, filename)
         inspection.template_id = template_id
 
         suggested = auto_suggest_mapping(inspection)
