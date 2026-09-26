@@ -7,7 +7,7 @@
 ## Phase 2 System Architecture
 
 ```
-[ Frontend (React/Vite/TS) ] 
+[ Frontend (React/Vite/TS) - Create Presentation Wizard ] 
        │
        ├── (GET /health) ──────────────────────────> [ Backend (FastAPI) ]
        ├── (POST /api/recognitions/validate-excel) ─> [ Excel Parser Service ]

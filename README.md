@@ -4,7 +4,7 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 2.3 — Actual KONE Master Template Integration & Security Verification`
+**Current Phase**: `Phase 2.4 — Professional HR UX Consolidation & Single-Workflow Architecture`
 
 ## Tech Stack
 
@@ -84,8 +84,10 @@ npm run build
    - Saves generated presentations to `storage/generated/<generation_id>.pptx`.
    - Post-build readability verification before returning download payload.
 
-3. **Interactive Frontend Workflow**:
-   - `GeneratePresentation` page allowing Excel upload, PPTX template upload, shape mapping configuration, progress tracking, and direct `.pptx` file download.
+3. **Single-Workflow HR Presentation UI**:
+   - Consolidated `CreatePresentation` step-by-step wizard (Data Upload → Template Selection → Mapping & Review → Presentation Generation).
+   - Unified state handling ensuring files are selected once per creation flow.
+   - Professional HR visual design without internal dev noise or phase badges.
 
 ---
 
