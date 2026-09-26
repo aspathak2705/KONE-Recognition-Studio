@@ -3,6 +3,7 @@ import { AppShell, NavTab } from "./components/AppShell";
 import { Dashboard } from "./pages/Dashboard";
 import { ExcelImport } from "./pages/ExcelImport";
 import { TemplateManager } from "./pages/TemplateManager";
+import { GeneratePresentation } from "./pages/GeneratePresentation";
 import { RecognitionProjects } from "./pages/RecognitionProjects";
 
 export function App() {
@@ -12,6 +13,7 @@ export function App() {
     dashboard: "Dashboard",
     import: "Excel Import",
     templates: "Template Inspector",
+    generate: "Generate Presentation",
     projects: "Recognition Projects",
     settings: "Settings",
   };
@@ -30,9 +32,11 @@ export function App() {
       )}
       {activeTab === "import" && <ExcelImport />}
       {activeTab === "templates" && <TemplateManager />}
+      {activeTab === "generate" && <GeneratePresentation />}
       {activeTab === "projects" && <RecognitionProjects />}
     </AppShell>
   );
 }
+
 
 export default App;

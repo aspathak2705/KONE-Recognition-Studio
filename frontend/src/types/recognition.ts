@@ -17,6 +17,7 @@ export interface ValidationErrorItem {
 export interface ExcelValidationResponse {
   valid: boolean;
   filename: string;
+  file_id?: string;
   total_rows: number;
   valid_rows: number;
   invalid_rows: number;
@@ -71,3 +72,56 @@ export interface TemplateInspectionResponse {
   warnings: string[];
   saved_path?: string;
 }
+
+
+export interface FieldMappingDetail {
+  shape_name: string;
+  shape_id?: string;
+  placeholder_index?: number;
+  required: boolean;
+}
+
+export interface FieldMappingConfig {
+  employee_name?: FieldMappingDetail;
+  designation?: FieldMappingDetail;
+  branch?: FieldMappingDetail;
+  award_name?: FieldMappingDetail;
+}
+
+export interface MappingValidationResponse {
+  valid: boolean;
+  mapping_status: "not_configured" | "partially_configured" | "valid" | "invalid";
+  errors: string[];
+  warnings: string[];
+}
+
+export interface TemplateReadinessResponse {
+  template_id: string;
+  filename: string;
+  inspection_status: "success" | "failed";
+  mapping_status: "not_configured" | "partially_configured" | "valid" | "invalid";
+  generation_readiness: "requires_template" | "requires_mapping" | "blocked_by_validation" | "ready_for_generation";
+  configured_mapping?: FieldMappingConfig;
+  suggested_mapping?: FieldMappingConfig;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface GenerationRequest {
+  excel_file_id: string;
+  template_file_id: string;
+  mapping_config: FieldMappingConfig;
+}
+
+export interface GenerationResponse {
+  generation_id: string;
+  source_template_file_id: string;
+  source_excel_file_id: string;
+  generated_file_id: string;
+  record_count: number;
+  slide_count: number;
+  status: string;
+  warnings: string[];
+  download_url: string;
+}
+

@@ -4,53 +4,39 @@
 
 **KONE Recognition Studio** automates employee recognition presentation generation from Excel data to PowerPoint formats.
 
-## Phase 1 System Architecture
+## Phase 2 System Architecture
 
 ```
 [ Frontend (React/Vite/TS) ] 
        │
-       ├── (GET /health) ──────────────────────> [ Backend (FastAPI) ]
-       ├── (GET /api/recognitions/schema) ─────> [ Schema Specification ]
-       ├── (POST /api/recognitions/validate) ──> [ Excel Parser Service (openpyxl) ]
-       └── (POST /api/templates/inspect) ─────> [ Template Inspector (python-pptx) ]
-                                                       │
-                                                       ▼
-                                            [ Safe Storage Abstraction ]
-                                            (storage/uploads/excel & templates)
+       ├── (GET /health) ──────────────────────────> [ Backend (FastAPI) ]
+       ├── (POST /api/recognitions/validate-excel) ─> [ Excel Parser Service ]
+       ├── (POST /api/templates/inspect) ─────────> [ Template Inspector (python-pptx) ]
+       ├── (GET /api/templates/{file_id}/readiness) ─> [ Mapping Readiness Service ]
+       ├── (POST /api/recognitions/generate) ─────> [ PPTX Generator Engine ]
+       └── (GET /api/generations/{id}/download) ───> [ File Download Response ]
+                                                            │
+                                                            ▼
+                                                [ Storage Abstraction ]
+                                        (storage/uploads/ & storage/generated/)
 ```
 
-## Data Processing Pipelines
+## PPTX Presentation Generation Pipeline
 
-### 1. Excel Parsing & Validation Pipeline
 ```text
-Uploaded .xlsx File
+Validated Excel Records + Master Template (.pptx) + Field Mapping Config
   ↓
-File Storage Service (UUID filename, path traversal guard)
+Validation & Readiness Engine (Verifies required shape mappings)
   ↓
-openpyxl Workbook Loader (data_only=True)
+python-pptx Layout Cloner (Clones slide 0 for multi-employee batches)
   ↓
-Header Canonicalization (employee_name, designation, branch, award_name)
+Text Substitution (Substitutes text while preserving font, size, color, & wrapping)
   ↓
-Row-Level Validation (empty check, whitespace trim, duplicate detection)
+Overflow Detection (Flags values > 40 chars)
   ↓
-Structured Validation Response (Pydantic models)
+Save Output (storage/generated/<generation_id>.pptx)
+  ↓
+Readability Verification (Re-inspects generated PPTX using python-pptx)
+  ↓
+Return File Download Endpoint (/api/generations/{generation_id}/download)
 ```
-
-### 2. PowerPoint Inspection Pipeline
-```text
-Uploaded .pptx Master Template
-  ↓
-File Storage Service (UUID filename)
-  ↓
-python-pptx Presentation Inspector (Read-Only)
-  ↓
-Extract Slide Metadata (Count, Width, Height, Aspect Ratio 16:9 / 4:3)
-  ↓
-Extract Shape Breakdown (Text frames, Positions, Width/Height, Placeholders)
-  ↓
-Template Inspection Response & Warnings
-```
-
-## Phase 2 Deferred Architecture
-
-PowerPoint presentation generation (`python-pptx` layout builder) and database persistence are deferred to Phase 2 after final template shape mapping alignment.

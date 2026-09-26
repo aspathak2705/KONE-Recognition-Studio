@@ -1,7 +1,7 @@
 import React from "react";
 import { LayoutDashboard, Award, FileSpreadsheet, Settings, FileUp } from "lucide-react";
 
-export type NavTab = "dashboard" | "import" | "templates" | "projects" | "settings";
+export type NavTab = "dashboard" | "import" | "templates" | "generate" | "projects" | "settings";
 
 interface AppShellProps {
   activeTab: NavTab;
@@ -15,8 +15,9 @@ export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppSh
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, disabled: false },
     { id: "import", label: "Excel Import", icon: FileUp, disabled: false },
     { id: "templates", label: "Templates", icon: FileSpreadsheet, disabled: false },
+    { id: "generate", label: "Generate Presentation", icon: Award, disabled: false },
     { id: "projects", label: "Recognition Projects", icon: Award, disabled: false },
-    { id: "settings", label: "Settings (Phase 2)", icon: Settings, disabled: true },
+    { id: "settings", label: "Settings (Phase 3)", icon: Settings, disabled: true },
   ];
 
   return (

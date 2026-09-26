@@ -1,18 +1,20 @@
-# Template Architecture & Inspection Guidelines
+# Template Architecture & Generation Guidelines
 
-This directory stores master PowerPoint templates (e.g. KONE newspaper-style template) uploaded by HR users.
+This directory stores master PowerPoint templates (`.pptx`) uploaded by HR users and configuration guidelines for Phase 2 generation.
 
-## Inspection vs Generation Boundary (Phase 1 vs Phase 2)
+## Field Mapping Contract
 
-- **Phase 1 Inspection**: Reads `.pptx` presentation structure using `python-pptx` without modifying shapes, slides, or underlying layouts.
-- **Phase 2 Generation**: Will clone slide layouts, substitute dynamic text frames, and generate downloadable editable `.pptx` files.
+Each field in the canonical recognition schema must map to a valid shape name on slide #1 of the master template:
 
-## Phase 2 Dependency Checklist
+- `employee_name` -> Target text shape name (e.g., `EmployeeName`)
+- `designation` -> Target text shape name (e.g., `Designation`)
+- `branch` -> Target text shape name (e.g., `Branch`)
+- `award_name` -> Target text shape name (e.g., `AwardName`)
 
-Before Phase 2 PowerPoint generation can be implemented, the following layout decisions must be aligned:
+## Generation & Layout Cloning Rules
 
-1. **Card Layout Structure**: Which slide layout or shapes represent an employee recognition card?
-2. **Capacity per Slide**: How many recognition cards fit on a single newspaper page?
-3. **Multi-Slide Spillovers**: How should the system handle batches exceeding single-slide capacity?
-4. **Font Overflow & Wrapping**: What maximum character limits apply to long employee or award names?
-5. **Manual Photo Alignment**: How will HR manually insert photos into generated picture frames?
+1. **Slide Cloning**: The generator clones slide #1 for each employee recognition record in the Excel dataset.
+2. **Formatting Preservation**: Font family, font size, font color (RGB), bold/italic attributes, and text alignment are copied from the template's initial run formatting.
+3. **Template Preservation**: Master template files in `storage/uploads/templates/` remain strictly read-only and are never modified.
+4. **Output Storage**: Generated presentations are written to `storage/generated/<generation_id>.pptx` with a unique UUID file identifier.
+5. **Manual Photo Alignment**: Post-generation HR activity for pasting employee photo assets into the generated presentation.

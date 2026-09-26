@@ -4,13 +4,13 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 1.1 — Stabilization and Generation Readiness`
+**Current Phase**: `Phase 2 — Template Mapping Foundation & Controlled PowerPoint Generation`
 
 ## Tech Stack
 
 - **Backend**: Python, FastAPI, Pydantic, Uvicorn, openpyxl, python-pptx, pytest
 - **Frontend**: React, TypeScript, Vite, Tailwind CSS v4, Lucide React
-- **Future Generation Layer**: `python-pptx` presentation builder engine (Deferred to Phase 2)
+- **Presentation Engine**: `python-pptx` automated layout cloning and text substitution builder
 
 ---
 
@@ -42,6 +42,10 @@ Verify backend endpoints:
 - Excel schema spec: `GET http://127.0.0.1:8000/api/recognitions/schema`
 - Validate Excel upload: `POST http://127.0.0.1:8000/api/recognitions/validate-excel`
 - Inspect PowerPoint template: `POST http://127.0.0.1:8000/api/templates/inspect`
+- Template readiness status: `GET http://127.0.0.1:8000/api/templates/{file_id}/readiness`
+- Validate field mapping: `POST http://127.0.0.1:8000/api/templates/mapping/validate`
+- Generate presentation: `POST http://127.0.0.1:8000/api/recognitions/generate`
+- Download generated `.pptx`: `GET http://127.0.0.1:8000/api/generations/{generation_id}/download`
 
 ### 2. Frontend Setup
 
@@ -66,21 +70,22 @@ npm run build
 
 ---
 
-## Phase 1 Feature Summary
+## Phase 2 Feature Summary
 
-1. **Excel Parsing & Schema Validation**:
-   - Parses `.xlsx` workbooks using `openpyxl`.
-   - Supports canonical headers: `employee_name`, `designation`, `branch`, `award_name` (with flexible aliases like `name`, `role`, `city`, `award`).
-   - Identifies empty cell values, missing required headers, corrupt workbooks, and duplicate records.
-   - Returns structured JSON validation feedback with row-level error reporting.
+1. **Template Mapping & Readiness Engine**:
+   - Explicit field mapping contract (`employee_name`, `designation`, `branch`, `award_name`).
+   - Auto-suggests mappings based on shape names and placeholder types.
+   - Calculates explicit readiness states (`requires_template`, `requires_mapping`, `blocked_by_validation`, `ready_for_generation`).
 
-2. **PowerPoint Template Inspection**:
-   - Inspects master PowerPoint templates (`.pptx`) using `python-pptx`.
-   - Extracts presentation metadata (slide count, slide dimensions, aspect ratio).
-   - Analyzes slide-level text frames, shape types, shape positions, and placeholder counts without modifying the original template file.
+2. **Controlled PowerPoint Presentation Generation**:
+   - Clones slide layouts dynamically for multi-record Excel batches.
+   - Substitutes dynamic text while preserving font family, size, color, alignment, and line wrapping.
+   - Performs long-text overflow detection (>40 chars) and emits structured warnings.
+   - Saves generated presentations to `storage/generated/<generation_id>.pptx`.
+   - Post-build readability verification before returning download payload.
 
-3. **Safe Local File Storage**:
-   - Stores uploaded files under `storage/uploads/excel` and `storage/uploads/templates` using UUID filenames to prevent path traversal.
+3. **Interactive Frontend Workflow**:
+   - `GeneratePresentation` page allowing Excel upload, PPTX template upload, shape mapping configuration, progress tracking, and direct `.pptx` file download.
 
 ---
 
