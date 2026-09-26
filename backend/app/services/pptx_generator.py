@@ -156,10 +156,10 @@ def generate_powerpoint_presentation(
                 shape = find_shape_by_name(target_slide.shapes, s_name)
                 val = record_dict.get(field_name, "")
                 
-                # Check for long text overflow warning (> 40 chars)
+                # Check for long text length warning heuristic (> 40 chars)
                 if len(val) > 40:
                     warnings.append(
-                        f"Slide #{idx+1}: Field '{field_name}' value '{val[:20]}...' exceeds 40 characters; check font fitting."
+                        f"TEXT_LENGTH_WARNING: Slide #{idx+1} field '{field_name}' length ({len(val)} chars) exceeds threshold (40 chars); verify layout fit."
                     )
 
                 if shape:

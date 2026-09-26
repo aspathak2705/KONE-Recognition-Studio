@@ -100,7 +100,7 @@ def validate_mapping_config(
 
             if detail.shape_name in used_shapes:
                 errors.append(
-                    f"Conflicting mapping: Shape '{detail.shape_name}' is assigned to both '{used_shapes[detail.shape_name]}' and '{field_name}'."
+                    f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
                 )
             else:
                 used_shapes[detail.shape_name] = field_name

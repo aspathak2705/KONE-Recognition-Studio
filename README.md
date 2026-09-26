@@ -4,7 +4,7 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 2 — Template Mapping Foundation & Controlled PowerPoint Generation`
+**Current Phase**: `Phase 2.1 — Generation Verification, Template Fidelity & Production-Safety Hardening`
 
 ## Tech Stack
 

@@ -72,7 +72,7 @@ def test_validate_mapping_config_conflicting():
     res = validate_mapping_config(cfg, inspection)
     assert res.valid is False
     assert res.mapping_status == MappingStatus.INVALID
-    assert "Conflicting mapping" in res.errors[0]
+    assert "AMBIGUOUS_SHAPE_MAPPING" in res.errors[0]
 
 
 def test_calculate_template_readiness():

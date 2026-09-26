@@ -23,8 +23,17 @@ router = APIRouter(tags=["Generation & Mapping"])
 
 
 def get_stored_file_path(file_id: str, subfolder: str, extension: str) -> Path:
+    # Reject file IDs containing path traversal elements or non-hex characters
+    if not file_id or not file_id.isalnum() or len(file_id) > 64:
+        raise HTTPException(status_code=400, detail="Invalid file identifier format.")
+        
     target_dir = settings.STORAGE_DIR / subfolder
-    target_path = target_dir / f"{file_id}{extension}"
+    target_path = (target_dir / f"{file_id}{extension}").resolve()
+    
+    # Ensure resolved path is within STORAGE_DIR
+    if not str(target_path).startswith(str(settings.STORAGE_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Access denied: invalid file path.")
+
     if not target_path.exists():
         raise HTTPException(status_code=404, detail=f"File identifier '{file_id}' not found.")
     return target_path
@@ -97,7 +106,15 @@ def generate_presentation_endpoint(req: GenerationRequest):
 
 @router.get("/api/generations/{generation_id}/download")
 def download_generated_presentation(generation_id: str):
-    gen_path = settings.GENERATED_OUTPUTS_DIR / f"{generation_id}.pptx"
+    if not generation_id or not generation_id.isalnum() or len(generation_id) > 64:
+        raise HTTPException(status_code=400, detail="Invalid generation identifier format.")
+
+    gen_dir = settings.GENERATED_OUTPUTS_DIR.resolve()
+    gen_path = (gen_dir / f"{generation_id}.pptx").resolve()
+    
+    if not str(gen_path).startswith(str(gen_dir)):
+        raise HTTPException(status_code=400, detail="Access denied: invalid file path.")
+
     if not gen_path.exists():
         raise HTTPException(status_code=404, detail="Generated presentation file not found.")
 
@@ -106,3 +123,4 @@ def download_generated_presentation(generation_id: str):
         filename=f"KONE_Recognition_{generation_id[:8]}.pptx",
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
+
