@@ -84,6 +84,8 @@ class GenerationRequest(BaseModel):
 class GenerationResponse(BaseModel):
     generation_id: str
     source_template_file_id: str
+    template_version: Optional[int] = 1
+    template_file_hash: Optional[str] = None
     source_excel_file_id: str
     generated_file_id: str
     record_count: int

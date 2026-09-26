@@ -199,3 +199,37 @@ def test_registry_restart_persistence(tmp_path):
     assert reloaded.file_hash == res.template.file_hash
     assert reloaded.generation_readiness == res.template.generation_readiness
 
+
+def test_generation_job_version_binding(tmp_registry):
+    content1 = create_mock_pptx_bytes("v1 text")
+    res1 = tmp_registry.register_or_update_template(
+        name="Job Binding Test",
+        content=content1,
+        filename="v1.pptx",
+    )
+
+    # Fetch PPTX for version 1
+    _, v1_obj = tmp_registry.get_template_version_pptx(res1.template.template_id, version_number=1)
+    assert v1_obj.version_number == 1
+    assert v1_obj.file_hash == res1.active_version.file_hash
+
+    # Create version 2
+    content2 = create_mock_pptx_bytes("v2 text")
+    res2 = tmp_registry.register_or_update_template(
+        name="Job Binding Test",
+        content=content2,
+        filename="v2.pptx",
+        existing_template_id=res1.template.template_id,
+    )
+
+    # Fetch PPTX explicitly for version 1 again
+    _, v1_reloaded = tmp_registry.get_template_version_pptx(res1.template.template_id, version_number=1)
+    assert v1_reloaded.version_number == 1
+    assert v1_reloaded.file_hash == v1_obj.file_hash
+
+    # Fetch PPTX for active version (which is version 2)
+    _, v2_active = tmp_registry.get_template_version_pptx(res1.template.template_id)
+    assert v2_active.version_number == 2
+    assert v2_active.file_hash != v1_obj.file_hash
+
+

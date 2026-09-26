@@ -116,6 +116,9 @@ def generate_presentation_endpoint(req: GenerationRequest):
             source_excel_file_id=req.excel_file_id,
             source_template_file_id=req.template_file_id,
         )
+        if registered_meta:
+            gen_res.template_version = active_version.version_number
+            gen_res.template_file_hash = active_version.file_hash
         return gen_res
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

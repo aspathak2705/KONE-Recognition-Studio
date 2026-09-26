@@ -4,7 +4,7 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 2.5 — Template Registry Reliability, Version Integrity & Real-Template Acceptance`
+**Current Phase**: `Phase 2.6 — Actual KONE Master Template Acceptance & Generation Fidelity`
 
 ## Tech Stack
 
