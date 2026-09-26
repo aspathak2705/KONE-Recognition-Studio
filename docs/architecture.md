@@ -4,7 +4,7 @@
 
 **KONE Recognition Studio** automates employee recognition presentation generation from Excel data to PowerPoint formats using a persistent, reusable **Template Registry**.
 
-## Phase 2.4 System Architecture
+## Phase 2.5 System Architecture
 
 ```text
 [ Frontend (React/Vite/TS) - HR Single Workflow ] 

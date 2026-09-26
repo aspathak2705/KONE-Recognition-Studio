@@ -4,7 +4,7 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 2.4 — Reusable Template Registry & Single-Workflow HR Experience`
+**Current Phase**: `Phase 2.5 — Template Registry Reliability, Version Integrity & Real-Template Acceptance`
 
 ## Tech Stack
 
