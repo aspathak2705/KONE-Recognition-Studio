@@ -119,6 +119,13 @@ def generate_presentation_endpoint(req: GenerationRequest):
         if registered_meta:
             gen_res.template_version = active_version.version_number
             gen_res.template_file_hash = active_version.file_hash
+
+            # Update persisted job metadata JSON file
+            job_meta_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}.json"
+            import json
+            with open(job_meta_path, "w", encoding="utf-8") as f:
+                json.dump(gen_res.dict(), f, indent=2)
+
         return gen_res
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

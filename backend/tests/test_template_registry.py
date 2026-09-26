@@ -233,3 +233,46 @@ def test_generation_job_version_binding(tmp_registry):
     assert v2_active.file_hash != v1_obj.file_hash
 
 
+def test_persisted_job_metadata_integrity(tmp_path, monkeypatch):
+    from app.core.config import settings
+    from app.services.pptx_generator import generate_powerpoint_presentation
+    from app.schemas.recognition import RecognitionRecord
+
+    gen_dir = tmp_path / "generated"
+    monkeypatch.setattr(settings, "GENERATED_OUTPUTS_DIR", gen_dir)
+
+    tpl_bytes = create_mock_pptx_bytes("Job Integrity")
+    records = [
+        RecognitionRecord(
+            row_number=1,
+            employee_name="Jane Doe",
+            designation="Engineer",
+            branch="Helsinki",
+            award_name="Quarterly Award",
+            is_valid=True,
+            errors=[],
+        )
+    ]
+
+    res = generate_powerpoint_presentation(
+        template_content=tpl_bytes,
+        template_filename="mock.pptx",
+        excel_records=records,
+        mapping_config=FieldMappingConfig(),
+        source_excel_file_id="a" * 32,
+        source_template_file_id="b" * 32,
+    )
+
+    job_file = gen_dir / f"{res.generation_id}.json"
+    assert job_file.exists()
+
+    import json
+    with open(job_file, "r", encoding="utf-8") as f:
+        job_data = json.load(f)
+
+    assert job_data["generation_id"] == res.generation_id
+    assert job_data["source_template_file_id"] == "b" * 32
+    assert job_data["status"] == "completed"
+
+
+

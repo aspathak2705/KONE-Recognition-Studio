@@ -196,7 +196,7 @@ def generate_powerpoint_presentation(
     if not verification.valid:
         raise ValueError("Generated PowerPoint presentation failed post-build readability inspection.")
 
-    return GenerationResponse(
+    response = GenerationResponse(
         generation_id=generation_id,
         source_template_file_id=source_template_file_id,
         source_excel_file_id=source_excel_file_id,
@@ -208,3 +208,11 @@ def generate_powerpoint_presentation(
         structured_warnings=structured_warnings,
         download_url=f"/api/generations/{generation_id}/download",
     )
+
+    # Persist job metadata JSON file for historical integrity
+    job_meta_path = settings.GENERATED_OUTPUTS_DIR / f"{generation_id}.json"
+    import json
+    with open(job_meta_path, "w", encoding="utf-8") as f:
+        json.dump(response.dict(), f, indent=2)
+
+    return response
