@@ -8,6 +8,7 @@ from app.schemas.mapping import (
     InspectionStatus,
     MappingValidationResponse,
     TemplateReadinessResponse,
+    ErrorDetail,
 )
 
 CANONICAL_FIELDS = ["employee_name", "designation", "branch", "award_name"]
@@ -68,17 +69,31 @@ def validate_mapping_config(
     mapping: FieldMappingConfig, template_inspection: TemplateInspectionResponse
 ) -> MappingValidationResponse:
     errors: List[str] = []
+    structured_errors: List[ErrorDetail] = []
     warnings: List[str] = []
 
     if not template_inspection.valid or not template_inspection.slides:
+        err_msg = "Template inspection data is invalid or contains no slides."
         return MappingValidationResponse(
             valid=False,
             mapping_status=MappingStatus.INVALID,
-            errors=["Template inspection data is invalid or contains no slides."],
+            errors=[err_msg],
+            structured_errors=[ErrorDetail(code="INVALID_TEMPLATE_INSPECTION", message=err_msg)],
             warnings=[],
         )
 
-    slide = template_inspection.slides[0]
+    slide_idx = mapping.template_slide_index if mapping else 0
+    if slide_idx < 0 or slide_idx >= len(template_inspection.slides):
+        err_msg = f"Configured template_slide_index {slide_idx} is out of bounds (slide count: {len(template_inspection.slides)})."
+        return MappingValidationResponse(
+            valid=False,
+            mapping_status=MappingStatus.INVALID,
+            errors=[err_msg],
+            structured_errors=[ErrorDetail(code="INVALID_SLIDE_INDEX", message=err_msg)],
+            warnings=[],
+        )
+
+    slide = template_inspection.slides[slide_idx]
     available_shape_names = {s.shape_name for s in slide.text_shapes}
 
     used_shapes: Dict[str, str] = {}
@@ -96,11 +111,30 @@ def validate_mapping_config(
             configured_fields_count += 1
             
             if detail.shape_name not in available_shape_names:
-                errors.append(f"Mapped shape '{detail.shape_name}' for field '{field_name}' does not exist on slide #1.")
+                err_msg = f"Mapped shape '{detail.shape_name}' for field '{field_name}' does not exist on slide #{slide_idx + 1}."
+                errors.append(err_msg)
+                structured_errors.append(
+                    ErrorDetail(
+                        code="MISSING_MAPPED_SHAPE",
+                        field=field_name,
+                        message=err_msg,
+                        details={"shape_name": detail.shape_name, "slide_index": slide_idx},
+                    )
+                )
 
             if detail.shape_name in used_shapes:
-                errors.append(
-                    f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
+                err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
+                errors.append(err_msg)
+                structured_errors.append(
+                    ErrorDetail(
+                        code="AMBIGUOUS_SHAPE_MAPPING",
+                        field=field_name,
+                        message=err_msg,
+                        details={
+                            "shape_name": detail.shape_name,
+                            "conflicting_field": used_shapes[detail.shape_name],
+                        },
+                    )
                 )
             else:
                 used_shapes[detail.shape_name] = field_name
@@ -120,6 +154,7 @@ def validate_mapping_config(
         valid=len(errors) == 0 and configured_fields_count > 0,
         mapping_status=status,
         errors=errors,
+        structured_errors=structured_errors,
         warnings=warnings,
     )
 
@@ -135,6 +170,7 @@ def calculate_template_readiness(
 
     all_warnings = list(template_inspection.warnings) + val_res.warnings
     all_errors = list(val_res.errors)
+    all_structured_errors = list(val_res.structured_errors)
 
     if not template_inspection.valid:
         readiness = GenerationReadiness.REQUIRES_TEMPLATE
@@ -159,4 +195,5 @@ def calculate_template_readiness(
         suggested_mapping=suggested,
         warnings=all_warnings,
         errors=all_errors,
+        structured_errors=all_structured_errors,
     )

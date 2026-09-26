@@ -1,6 +1,22 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from enum import Enum
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    field: Optional[str] = None
+    message: str
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TextLengthWarningDetail(BaseModel):
+    code: str = "TEXT_LENGTH_WARNING"
+    field: str
+    slide_number: int
+    character_count: int
+    threshold: int = 40
+    message: str
 
 
 class FieldMappingDetail(BaseModel):
@@ -15,6 +31,7 @@ class FieldMappingConfig(BaseModel):
     designation: Optional[FieldMappingDetail] = None
     branch: Optional[FieldMappingDetail] = None
     award_name: Optional[FieldMappingDetail] = None
+    template_slide_index: int = 0  # 0-based slide index for generation source layout
 
 
 class InspectionStatus(str, Enum):
@@ -40,6 +57,7 @@ class MappingValidationResponse(BaseModel):
     valid: bool
     mapping_status: MappingStatus
     errors: List[str] = Field(default_factory=list)
+    structured_errors: List[ErrorDetail] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
 
@@ -53,6 +71,7 @@ class TemplateReadinessResponse(BaseModel):
     suggested_mapping: Optional[FieldMappingConfig] = None
     warnings: List[str] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
+    structured_errors: List[ErrorDetail] = Field(default_factory=list)
 
 
 class GenerationRequest(BaseModel):
@@ -70,4 +89,5 @@ class GenerationResponse(BaseModel):
     slide_count: int
     status: str = "completed"
     warnings: List[str] = Field(default_factory=list)
+    structured_warnings: List[TextLengthWarningDetail] = Field(default_factory=list)
     download_url: str

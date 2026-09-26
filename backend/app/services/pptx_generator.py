@@ -7,7 +7,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from app.schemas.recognition import RecognitionRecord, ExcelValidationResponse
 from app.schemas.template import TemplateInspectionResponse
-from app.schemas.mapping import FieldMappingConfig, GenerationResponse
+from app.schemas.mapping import FieldMappingConfig, GenerationResponse, TextLengthWarningDetail
 from app.services.template_inspector import inspect_powerpoint_template
 from app.core.config import settings
 
@@ -112,6 +112,7 @@ def generate_powerpoint_presentation(
     source_template_file_id: str,
 ) -> GenerationResponse:
     warnings: List[str] = []
+    structured_warnings: List[TextLengthWarningDetail] = []
     
     if not excel_records:
         raise ValueError("Cannot generate presentation from an empty recognition dataset.")
@@ -124,8 +125,12 @@ def generate_powerpoint_presentation(
     if not prs.slides:
         raise ValueError("Source template presentation contains no slides.")
 
+    slide_idx = mapping_config.template_slide_index if mapping_config else 0
+    if slide_idx < 0 or slide_idx >= len(prs.slides):
+        raise ValueError(f"Configured template_slide_index {slide_idx} is out of bounds (slide count: {len(prs.slides)}).")
+
     blank_layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
-    template_slide_0 = prs.slides[0]
+    template_slide_source = prs.slides[slide_idx]
 
     # Map required shapes on each slide
     field_map = {
@@ -137,11 +142,11 @@ def generate_powerpoint_presentation(
 
     # Populate slides: 1 slide per employee record
     for idx, rec in enumerate(valid_records):
-        if idx == 0:
-            target_slide = template_slide_0
+        if idx == 0 and slide_idx == 0:
+            target_slide = template_slide_source
         else:
             target_slide = prs.slides.add_slide(blank_layout)
-            copy_slide_elements(template_slide_0, target_slide)
+            copy_slide_elements(template_slide_source, target_slide)
 
         # Substitute mapped fields
         record_dict = {
@@ -158,8 +163,16 @@ def generate_powerpoint_presentation(
                 
                 # Check for long text length warning heuristic (> 40 chars)
                 if len(val) > 40:
-                    warnings.append(
-                        f"TEXT_LENGTH_WARNING: Slide #{idx+1} field '{field_name}' length ({len(val)} chars) exceeds threshold (40 chars); verify layout fit."
+                    warn_msg = f"TEXT_LENGTH_WARNING: Slide #{idx+1} field '{field_name}' length ({len(val)} chars) exceeds threshold (40 chars); verify layout fit."
+                    warnings.append(warn_msg)
+                    structured_warnings.append(
+                        TextLengthWarningDetail(
+                            field=field_name,
+                            slide_number=idx + 1,
+                            character_count=len(val),
+                            threshold=40,
+                            message=warn_msg,
+                        )
                     )
 
                 if shape:
@@ -192,5 +205,6 @@ def generate_powerpoint_presentation(
         slide_count=len(prs.slides),
         status="completed",
         warnings=warnings,
+        structured_warnings=structured_warnings,
         download_url=f"/api/generations/{generation_id}/download",
     )
