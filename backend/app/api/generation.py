@@ -22,10 +22,15 @@ from app.core.config import settings
 router = APIRouter(tags=["Generation & Mapping"])
 
 
+import re
+
+HEX_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{32}$")
+
+
 def get_stored_file_path(file_id: str, subfolder: str, extension: str) -> Path:
-    # Reject file IDs containing path traversal elements or non-hex characters
-    if not file_id or not file_id.isalnum() or len(file_id) > 64:
-        raise HTTPException(status_code=400, detail="Invalid file identifier format.")
+    # Reject file IDs that fail 32-char hex UUID format validation
+    if not file_id or not HEX_ID_PATTERN.match(file_id):
+        raise HTTPException(status_code=400, detail="Invalid file identifier format: Expected 32-character hex ID.")
         
     target_dir = settings.STORAGE_DIR / subfolder
     target_path = (target_dir / f"{file_id}{extension}").resolve()
@@ -106,8 +111,8 @@ def generate_presentation_endpoint(req: GenerationRequest):
 
 @router.get("/api/generations/{generation_id}/download")
 def download_generated_presentation(generation_id: str):
-    if not generation_id or not generation_id.isalnum() or len(generation_id) > 64:
-        raise HTTPException(status_code=400, detail="Invalid generation identifier format.")
+    if not generation_id or not HEX_ID_PATTERN.match(generation_id):
+        raise HTTPException(status_code=400, detail="Invalid generation identifier format: Expected 32-character hex ID.")
 
     gen_dir = settings.GENERATED_OUTPUTS_DIR.resolve()
     gen_path = (gen_dir / f"{generation_id}.pptx").resolve()
