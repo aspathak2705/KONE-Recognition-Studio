@@ -77,7 +77,8 @@ class TemplateReadinessResponse(BaseModel):
 class GenerationRequest(BaseModel):
     excel_file_id: str
     template_file_id: str
-    mapping_config: FieldMappingConfig
+    template_version: Optional[int] = None
+    mapping_config: Optional[FieldMappingConfig] = None
 
 
 class GenerationResponse(BaseModel):

@@ -1,21 +1,16 @@
 import { useState } from "react";
 import { AppShell, NavTab } from "./components/AppShell";
 import { Dashboard } from "./pages/Dashboard";
-import { ExcelImport } from "./pages/ExcelImport";
-import { TemplateManager } from "./pages/TemplateManager";
-import { GeneratePresentation } from "./pages/GeneratePresentation";
-import { RecognitionProjects } from "./pages/RecognitionProjects";
+import { CreatePresentation } from "./pages/CreatePresentation";
+import { TemplateLibrary } from "./pages/TemplateLibrary";
 
 export function App() {
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
 
   const pageTitles: Record<NavTab, string> = {
     dashboard: "Dashboard",
-    import: "Excel Import",
-    templates: "Template Inspector",
-    generate: "Generate Presentation",
-    projects: "Recognition Projects",
-    settings: "Settings",
+    create: "Create Presentation",
+    templates: "Template Library",
   };
 
   return (
@@ -26,17 +21,18 @@ export function App() {
     >
       {activeTab === "dashboard" && (
         <Dashboard
-          onNavigateToImport={() => setActiveTab("import")}
+          onNavigateToCreate={() => setActiveTab("create")}
           onNavigateToTemplates={() => setActiveTab("templates")}
         />
       )}
-      {activeTab === "import" && <ExcelImport />}
-      {activeTab === "templates" && <TemplateManager />}
-      {activeTab === "generate" && <GeneratePresentation />}
-      {activeTab === "projects" && <RecognitionProjects />}
+      {activeTab === "create" && (
+        <CreatePresentation
+          onNavigateToTemplates={() => setActiveTab("templates")}
+        />
+      )}
+      {activeTab === "templates" && <TemplateLibrary />}
     </AppShell>
   );
 }
-
 
 export default App;

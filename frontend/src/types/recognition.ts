@@ -110,7 +110,8 @@ export interface TemplateReadinessResponse {
 export interface GenerationRequest {
   excel_file_id: string;
   template_file_id: string;
-  mapping_config: FieldMappingConfig;
+  template_version?: number;
+  mapping_config?: FieldMappingConfig;
 }
 
 export interface GenerationResponse {
@@ -123,5 +124,41 @@ export interface GenerationResponse {
   status: string;
   warnings: string[];
   download_url: string;
+}
+
+export interface TemplateVersion {
+  version_number: number;
+  file_hash: string;
+  filename: string;
+  pptx_rel_path: string;
+  inspection_status: "success" | "failed";
+  mapping_status: "not_configured" | "partially_configured" | "valid" | "invalid";
+  generation_readiness: "requires_template" | "requires_mapping" | "blocked_by_validation" | "ready_for_generation";
+  mapping_config?: FieldMappingConfig;
+  inspection_data?: TemplateInspectionResponse;
+  created_at: string;
+}
+
+export interface TemplateMetadata {
+  template_id: string;
+  name: string;
+  current_version: number;
+  file_hash: string;
+  inspection_status: "success" | "failed";
+  mapping_status: "not_configured" | "partially_configured" | "valid" | "invalid";
+  generation_readiness: "requires_template" | "requires_mapping" | "blocked_by_validation" | "ready_for_generation";
+  aspect_ratio: string;
+  versions: TemplateVersion[];
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateRegistrationResponse {
+  template: TemplateMetadata;
+  active_version: TemplateVersion;
+  is_new_version: boolean;
+  is_duplicate_hash: boolean;
+  message: string;
 }
 

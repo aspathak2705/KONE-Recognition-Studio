@@ -1,20 +1,50 @@
-# Template Architecture & Generation Guidelines
+# KONE Master PowerPoint Template Documentation
 
-This directory stores master PowerPoint templates (`.pptx`) uploaded by HR users and configuration guidelines for Phase 2 generation.
+## Overview
 
-## Field Mapping Contract
+KONE Recognition Studio uses reusable registered master PowerPoint (`.pptx`) templates stored in the **Template Registry**.
 
-Each field in the canonical recognition schema must map to a valid shape name on slide #1 of the master template:
+---
 
-- `employee_name` -> Target text shape name (e.g., `EmployeeName`)
-- `designation` -> Target text shape name (e.g., `Designation`)
-- `branch` -> Target text shape name (e.g., `Branch`)
-- `award_name` -> Target text shape name (e.g., `AwardName`)
+## Template Registry & Versioning Architecture
 
-## Generation & Layout Cloning Rules
+Master PowerPoint templates are persistent, versioned assets. Inspection and field shape mapping occur **ONCE per template version**.
 
-1. **Slide Cloning**: The generator clones slide #1 for each employee recognition record in the Excel dataset.
-2. **Formatting Preservation**: Font family, font size, font color (RGB), bold/italic attributes, and text alignment are copied from the template's initial run formatting.
-3. **Template Preservation**: Master template files in `storage/uploads/templates/` remain strictly read-only and are never modified.
-4. **Output Storage**: Generated presentations are written to `storage/generated/<generation_id>.pptx` with a unique UUID file identifier.
-5. **Manual Photo Alignment**: Post-generation HR activity for pasting employee photo assets into the generated presentation.
+### Lifecycle
+
+```text
+Upload PPTX
+    ↓
+Calculate SHA-256 Hash
+    ↓
+Check Existing Hashes (Reuse if identical binary)
+    ↓
+Inspect Slide Structure (python-pptx)
+    ↓
+Configure Shape Field Mapping (employee_name, designation, branch, award_name)
+    ↓
+Save Configuration & Master PPTX (storage/templates/<template_id>/)
+    ↓
+Reuse across recurring HR recognition cycles (NO re-upload required)
+```
+
+---
+
+## Storage Layout
+
+```text
+storage/templates/<template_id>/
+├── template.json            # Master metadata (name, versions, readiness status)
+├── master_v1.pptx           # Preserved PowerPoint binary for Version 1
+├── inspection_v1.json       # Inspected shape structure for Version 1
+└── mapping_v1.json          # Perserved field shape mapping for Version 1
+```
+
+---
+
+## Canonical Field Mapping Rules
+
+1. **`employee_name`**: Primary title/header shape or text frame containing recipient full name.
+2. **`designation`**: Subtitle or body text frame for employee designation/role.
+3. **`branch`**: Secondary text frame specifying KONE branch location.
+4. **`award_name`**: Badge text frame specifying recognition award title.

@@ -68,13 +68,9 @@ def validate_mapping_endpoint(file_id: str, mapping_config: FieldMappingConfig):
 @router.post("/api/recognitions/generate", response_model=GenerationResponse)
 def generate_presentation_endpoint(req: GenerationRequest):
     excel_path = get_stored_file_path(req.excel_file_id, "uploads/excel", ".xlsx")
-    tpl_path = get_stored_file_path(req.template_file_id, "uploads/templates", ".pptx")
 
     with open(excel_path, "rb") as f:
         excel_content = f.read()
-
-    with open(tpl_path, "rb") as f:
-        tpl_content = f.read()
 
     excel_res = parse_and_validate_excel(excel_content, excel_path.name)
     if not excel_res.valid or not excel_res.records:
@@ -83,22 +79,40 @@ def generate_presentation_endpoint(req: GenerationRequest):
             detail="Uploaded Excel file is invalid or contains no valid recognition records.",
         )
 
-    tpl_inspection = inspect_powerpoint_template(tpl_content, tpl_path.name)
-    tpl_inspection.template_id = req.template_file_id
-
-    readiness = calculate_template_readiness(tpl_inspection, req.mapping_config)
-    if readiness.generation_readiness == "blocked_by_validation":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Template mapping is invalid: {'; '.join(readiness.errors)}",
+    # 1. Check if template_file_id is a registered template in template_registry
+    from app.services.template_registry_service import template_registry
+    registered_meta = template_registry.get_template(req.template_file_id)
+    
+    if registered_meta:
+        tpl_content, active_version = template_registry.get_template_version_pptx(
+            req.template_file_id, req.template_version
         )
+        tpl_filename = active_version.filename
+        mapping = req.mapping_config or active_version.mapping_config
+        if not mapping:
+            raise HTTPException(status_code=400, detail="Template mapping configuration is missing.")
+    else:
+        # Fallback to direct uploads/templates path for backwards compatibility
+        tpl_path = get_stored_file_path(req.template_file_id, "uploads/templates", ".pptx")
+        with open(tpl_path, "rb") as f:
+            tpl_content = f.read()
+        tpl_filename = tpl_path.name
+        mapping = req.mapping_config
+
+        tpl_inspection = inspect_powerpoint_template(tpl_content, tpl_filename)
+        readiness = calculate_template_readiness(tpl_inspection, mapping)
+        if readiness.generation_readiness == "blocked_by_validation":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Template mapping is invalid: {'; '.join(readiness.errors)}",
+            )
 
     try:
         gen_res = generate_powerpoint_presentation(
             template_content=tpl_content,
-            template_filename=tpl_path.name,
+            template_filename=tpl_filename,
             excel_records=excel_res.records,
-            mapping_config=req.mapping_config,
+            mapping_config=mapping,
             source_excel_file_id=req.excel_file_id,
             source_template_file_id=req.template_file_id,
         )

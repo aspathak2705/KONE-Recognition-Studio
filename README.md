@@ -4,7 +4,7 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 2.4 — Professional HR UX Consolidation & Single-Workflow Architecture`
+**Current Phase**: `Phase 2.4 — Reusable Template Registry & Single-Workflow HR Experience`
 
 ## Tech Stack
 
@@ -84,10 +84,11 @@ npm run build
    - Saves generated presentations to `storage/generated/<generation_id>.pptx`.
    - Post-build readability verification before returning download payload.
 
-3. **Single-Workflow HR Presentation UI**:
-   - Consolidated `CreatePresentation` step-by-step wizard (Data Upload → Template Selection → Mapping & Review → Presentation Generation).
-   - Unified state handling ensuring files are selected once per creation flow.
-   - Professional HR visual design without internal dev noise or phase badges.
+3. **Reusable Template Registry & Versioning Architecture**:
+   - Template upload, inspection, and shape mapping occur ONCE per template version.
+   - SHA-256 binary hashing prevents duplicate inspections of identical PPTX files.
+   - Filesystem-backed persistence at `storage/templates/<template_id>/`.
+   - Single-workflow HR UI: HR selects registered templates without re-uploading PPTX files.
 
 ---
 

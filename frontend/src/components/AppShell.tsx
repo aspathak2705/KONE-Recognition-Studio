@@ -1,7 +1,7 @@
 import React from "react";
-import { LayoutDashboard, Award, FileSpreadsheet, Settings, FileUp } from "lucide-react";
+import { LayoutDashboard, Award, FileSpreadsheet } from "lucide-react";
 
-export type NavTab = "dashboard" | "import" | "templates" | "generate" | "projects" | "settings";
+export type NavTab = "dashboard" | "create" | "templates";
 
 interface AppShellProps {
   activeTab: NavTab;
@@ -12,12 +12,9 @@ interface AppShellProps {
 
 export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppShellProps) {
   const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, disabled: false },
-    { id: "import", label: "Excel Import", icon: FileUp, disabled: false },
-    { id: "templates", label: "Templates", icon: FileSpreadsheet, disabled: false },
-    { id: "generate", label: "Generate Presentation", icon: Award, disabled: false },
-    { id: "projects", label: "Recognition Projects", icon: Award, disabled: false },
-    { id: "settings", label: "Settings (Phase 3)", icon: Settings, disabled: true },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "create", label: "Create Presentation", icon: Award },
+    { id: "templates", label: "Templates", icon: FileSpreadsheet },
   ];
 
   return (
@@ -45,35 +42,19 @@ export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppSh
             return (
               <button
                 key={item.id}
-                onClick={() => !item.disabled && setActiveTab(item.id as NavTab)}
-                disabled={item.disabled}
+                onClick={() => setActiveTab(item.id as NavTab)}
                 className={`w-full flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors text-left ${
                   isActive
                     ? "bg-sidebar-accent text-primary font-semibold shadow-xs"
-                    : item.disabled
-                    ? "text-muted-foreground/50 cursor-not-allowed"
                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground cursor-pointer"
                 }`}
               >
                 <Icon className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
                 <span className="flex-1">{item.label}</span>
-                {item.disabled && (
-                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                    Soon
-                  </span>
-                )}
               </button>
             );
           })}
         </nav>
-
-        {/* Scope Note */}
-        <div className="p-4 border-t border-sidebar-border">
-          <div className="p-3 rounded-md bg-muted/60 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Phase 1 — Data & Templates</p>
-            <p>Excel validation & PowerPoint inspection active.</p>
-          </div>
-        </div>
       </aside>
 
       {/* Main Container */}
@@ -87,15 +68,6 @@ export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppSh
               </div>
             </div>
             <h1 className="text-lg font-semibold tracking-tight text-foreground">{pageTitle}</h1>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-              Phase 1 Active
-            </span>
-            <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
-              HR
-            </div>
           </div>
         </header>
 
