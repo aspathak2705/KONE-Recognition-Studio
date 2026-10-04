@@ -91,6 +91,13 @@ def generate_presentation_endpoint(req: GenerationRequest):
         mapping = req.mapping_config or active_version.mapping_config
         if not mapping:
             raise HTTPException(status_code=400, detail="Template mapping configuration is missing.")
+        
+        # Backend readiness gating
+        if active_version.generation_readiness != "ready_for_generation":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Generation blocked: Template version {active_version.version_number} readiness state is '{active_version.generation_readiness}'. Please complete valid shape mapping.",
+            )
     else:
         # Fallback to direct uploads/templates path for backwards compatibility
         tpl_path = get_stored_file_path(req.template_file_id, "uploads/templates", ".pptx")
@@ -101,7 +108,7 @@ def generate_presentation_endpoint(req: GenerationRequest):
 
         tpl_inspection = inspect_powerpoint_template(tpl_content, tpl_filename)
         readiness = calculate_template_readiness(tpl_inspection, mapping)
-        if readiness.generation_readiness == "blocked_by_validation":
+        if readiness.generation_readiness != "ready_for_generation":
             raise HTTPException(
                 status_code=400,
                 detail=f"Template mapping is invalid: {'; '.join(readiness.errors)}",
