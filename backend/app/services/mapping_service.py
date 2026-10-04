@@ -95,58 +95,100 @@ def validate_mapping_config(
 
     slide = template_inspection.slides[slide_idx]
     available_shape_names = {s.shape_name for s in slide.text_shapes}
+    available_image_names = {i.shape_name for i in slide.image_shapes}
+    all_available_shapes = available_shape_names.union(available_image_names)
 
     used_shapes: Dict[str, str] = {}
     configured_fields_count = 0
 
-    mapping_fields = [
-        ("employee_name", mapping.employee_name),
-        ("designation", mapping.designation),
-        ("branch", mapping.branch),
-        ("award_name", mapping.award_name),
-    ]
+    if mapping.slots:
+        # Multi-card slot validation mode
+        for slot in mapping.slots:
+            slot_fields = [
+                ("employee_name", slot.employee_name),
+                ("designation", slot.designation),
+                ("branch", slot.branch),
+                ("award_name", slot.award_name),
+                ("photo_placeholder", slot.photo_placeholder),
+            ]
+            for field_name, detail in slot_fields:
+                if detail and detail.shape_name:
+                    configured_fields_count += 1
+                    if detail.shape_name not in all_available_shapes:
+                        err_msg = f"Slot #{slot.slot_index+1} mapped shape '{detail.shape_name}' for field '{field_name}' does not exist on slide #{slide_idx + 1}."
+                        errors.append(err_msg)
+                        structured_errors.append(
+                            ErrorDetail(
+                                code="MISSING_MAPPED_SHAPE",
+                                field=field_name,
+                                message=err_msg,
+                                details={"shape_name": detail.shape_name, "slide_index": slide_idx, "slot_index": slot.slot_index},
+                            )
+                        )
+                    if detail.shape_name in used_shapes:
+                        err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields/slots ('{used_shapes[detail.shape_name]}' and slot #{slot.slot_index+1} '{field_name}')."
+                        errors.append(err_msg)
+                        structured_errors.append(
+                            ErrorDetail(
+                                code="AMBIGUOUS_SHAPE_MAPPING",
+                                field=field_name,
+                                message=err_msg,
+                                details={
+                                    "shape_name": detail.shape_name,
+                                    "conflicting_field": used_shapes[detail.shape_name],
+                                },
+                            )
+                        )
+                    else:
+                        used_shapes[detail.shape_name] = f"slot_{slot.slot_index}_{field_name}"
+    else:
+        # Legacy single-card mapping validation mode
+        mapping_fields = [
+            ("employee_name", mapping.employee_name),
+            ("designation", mapping.designation),
+            ("branch", mapping.branch),
+            ("award_name", mapping.award_name),
+        ]
 
-    for field_name, detail in mapping_fields:
-        if detail and detail.shape_name:
-            configured_fields_count += 1
-            
-            if detail.shape_name not in available_shape_names:
-                err_msg = f"Mapped shape '{detail.shape_name}' for field '{field_name}' does not exist on slide #{slide_idx + 1}."
-                errors.append(err_msg)
-                structured_errors.append(
-                    ErrorDetail(
-                        code="MISSING_MAPPED_SHAPE",
-                        field=field_name,
-                        message=err_msg,
-                        details={"shape_name": detail.shape_name, "slide_index": slide_idx},
+        for field_name, detail in mapping_fields:
+            if detail and detail.shape_name:
+                configured_fields_count += 1
+                
+                if detail.shape_name not in available_shape_names:
+                    err_msg = f"Mapped shape '{detail.shape_name}' for field '{field_name}' does not exist on slide #{slide_idx + 1}."
+                    errors.append(err_msg)
+                    structured_errors.append(
+                        ErrorDetail(
+                            code="MISSING_MAPPED_SHAPE",
+                            field=field_name,
+                            message=err_msg,
+                            details={"shape_name": detail.shape_name, "slide_index": slide_idx},
+                        )
                     )
-                )
 
-            if detail.shape_name in used_shapes:
-                err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
-                errors.append(err_msg)
-                structured_errors.append(
-                    ErrorDetail(
-                        code="AMBIGUOUS_SHAPE_MAPPING",
-                        field=field_name,
-                        message=err_msg,
-                        details={
-                            "shape_name": detail.shape_name,
-                            "conflicting_field": used_shapes[detail.shape_name],
-                        },
+                if detail.shape_name in used_shapes:
+                    err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
+                    errors.append(err_msg)
+                    structured_errors.append(
+                        ErrorDetail(
+                            code="AMBIGUOUS_SHAPE_MAPPING",
+                            field=field_name,
+                            message=err_msg,
+                            details={
+                                "shape_name": detail.shape_name,
+                                "conflicting_field": used_shapes[detail.shape_name],
+                            },
+                        )
                     )
-                )
+                else:
+                    used_shapes[detail.shape_name] = field_name
             else:
-                used_shapes[detail.shape_name] = field_name
-        else:
-            warnings.append(f"Required field '{field_name}' is not currently mapped.")
+                warnings.append(f"Required field '{field_name}' is not currently mapped.")
 
     if errors:
         status = MappingStatus.INVALID
-    elif configured_fields_count == len(CANONICAL_FIELDS):
-        status = MappingStatus.VALID
     elif configured_fields_count > 0:
-        status = MappingStatus.PARTIALLY_CONFIGURED
+        status = MappingStatus.VALID
     else:
         status = MappingStatus.NOT_CONFIGURED
 

@@ -109,8 +109,12 @@ export function TemplateLibrary() {
     }
   };
 
+  const currentVersionObj = selectedTemplate?.versions.find(
+    (v) => v.version_number === selectedTemplate.current_version
+  );
+  const currentInspection = currentVersionObj?.inspection_data;
   const availableShapes =
-    selectedTemplate?.versions[0]?.inspection_data?.slides[0]?.text_shapes.map((s) => s.shape_name) || [];
+    currentInspection?.slides[0]?.text_shapes.map((s) => s.shape_name) || [];
 
   return (
     <div className="space-y-8">

@@ -40,7 +40,7 @@ class TemplateRegistryService:
 
     def _get_template_dir(self, template_id: str) -> Path:
         if not HEX_ID_PATTERN.match(template_id):
-            raise HTTPException(status_code=400, detail="Invalid template identifier format: Expected 32-character hex ID.")
+            raise HTTPException(status_code=400, detail="Invalid file identifier format: Expected 32-character hex ID.")
         path = (self.registry_dir / template_id).resolve()
         if not str(path).startswith(str(self.registry_dir.resolve())):
             raise HTTPException(status_code=400, detail="Access denied: invalid template path.")

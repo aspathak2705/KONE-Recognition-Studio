@@ -49,6 +49,30 @@ async def register_template(
     )
 
 
+@router.get("/{template_id}/readiness", response_model=TemplateReadinessResponse)
+def get_template_readiness_endpoint(template_id: str, version_number: Optional[int] = None):
+    meta = template_registry.get_template(template_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+
+    v_num = version_number or meta.current_version
+    version_obj = next((v for v in meta.versions if v.version_number == v_num), None)
+    if not version_obj:
+        raise HTTPException(status_code=404, detail=f"Version {v_num} not found for template '{template_id}'.")
+
+    tpl_dir = template_registry._get_template_dir(template_id)
+    insp_file = tpl_dir / f"inspection_v{v_num}.json"
+    if not insp_file.exists():
+        raise HTTPException(status_code=404, detail=f"Inspection data for version {v_num} missing.")
+
+    import json
+    with open(insp_file, "r", encoding="utf-8") as f:
+        inspection = TemplateInspectionResponse(**json.load(f))
+
+    from app.services.mapping_service import calculate_template_readiness
+    return calculate_template_readiness(inspection, version_obj.mapping_config)
+
+
 @router.put("/{template_id}/mapping", response_model=TemplateMetadata)
 def update_template_mapping_endpoint(
     template_id: str,
