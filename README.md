@@ -4,7 +4,7 @@ Internal application for generating quarterly employee recognition presentations
 
 ## Development Phase
 
-**Current Phase**: `Phase 2.6 — Actual KONE Master Template Acceptance & Generation Fidelity`
+**Current Phase**: `Phase 2.6 — FINAL E2E Verification & Release Gate` (SYSTEM E2E: PASS | ACTUAL KONE TEMPLATE ACCEPTANCE: PENDING)
 
 ## Tech Stack
 
@@ -70,7 +70,7 @@ npm run build
 
 ---
 
-## Phase 2 Feature Summary
+## Phase 2 Feature & E2E Summary
 
 1. **Template Mapping & Readiness Engine**:
    - Explicit field mapping contract (`employee_name`, `designation`, `branch`, `award_name`).
@@ -88,6 +88,7 @@ npm run build
    - Template upload, inspection, and shape mapping occur ONCE per template version.
    - SHA-256 binary hashing prevents duplicate inspections of identical PPTX files.
    - Filesystem-backed persistence at `storage/templates/<template_id>/`.
+   - Generation jobs permanently bind `template_version` and `template_file_hash` into persisted `<generation_id>.json` metadata files.
    - Single-workflow HR UI: HR selects registered templates without re-uploading PPTX files.
 
 ---
