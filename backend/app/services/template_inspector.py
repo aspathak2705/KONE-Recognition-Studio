@@ -28,8 +28,8 @@ def analyze_slide_layout(
     groups_count: int,
 ) -> SlideLayoutModel:
     """Analyze text shapes and image frames to determine slide classification, employee slots, and capacity."""
-    # Determine slide type heuristic
-    if slide_number == 1 and (len(text_shapes) <= 3 or any("welcome" in s.text.lower() or "title" in s.shape_name.lower() or "kone" in s.text.lower() for s in text_shapes)):
+    # Classify slide type
+    if slide_number == 1 and (len(text_shapes) <= 3 or any(kw in s.text.lower() for s in text_shapes for kw in ["welcome", "title", "kone", "rewards"])):
         slide_type = SlideType.COVER
     elif slide_number == total_slides and total_slides > 1 and len(text_shapes) <= 2:
         slide_type = SlideType.CLOSING
@@ -38,9 +38,6 @@ def analyze_slide_layout(
     else:
         slide_type = SlideType.CONTENT
 
-    # Dynamic slot detection: Group text shapes spatially or by group hierarchy
-    # Look for repeating shape patterns (e.g. Employee_Name_1, Employee_Name_2, or shape clusters)
-    # Check shape names for numeric indexes like "_1", "_2", " (1)", " 1"
     import re
     indexed_slots: Dict[int, List[TextShapeInfo]] = {}
     indexed_images: Dict[int, List[ImageRegionInfo]] = {}
@@ -52,7 +49,7 @@ def analyze_slide_layout(
     for ts in text_shapes:
         m = index_pattern.search(ts.shape_name)
         if m:
-            idx = int(m.group(1)) - 1  # Convert 1-based to 0-based
+            idx = int(m.group(1)) - 1
             indexed_slots.setdefault(idx, []).append(ts)
         else:
             unindexed_text.append(ts)
@@ -69,13 +66,11 @@ def analyze_slide_layout(
     all_slot_indices = sorted(set(indexed_slots.keys()).union(set(indexed_images.keys())))
 
     if all_slot_indices:
-        # Multi-card layout detected via named shape indices
         slide_type = SlideType.REPEATING_CONTENT if len(all_slot_indices) > 1 else slide_type
         for slot_idx in all_slot_indices:
             t_list = indexed_slots.get(slot_idx, [])
             i_list = indexed_images.get(slot_idx, [])
             
-            # Compute bounding box
             min_left = min([t.left_inches for t in t_list] + [i.left_inches for i in i_list] + [999.0])
             min_top = min([t.top_inches for t in t_list] + [i.top_inches for i in i_list] + [999.0])
             max_right = max([t.left_inches + t.width_inches for t in t_list] + [i.left_inches + i.width_inches for i in i_list] + [0.0])
@@ -93,17 +88,65 @@ def analyze_slide_layout(
             )
         capacity = len(slots_info)
     else:
-        # Single card layout per slide
-        capacity = 1 if text_shapes else 0
-        slots_info.append(
-            EmployeeSlotInfo(
-                slot_index=0,
-                text_shapes=unindexed_text,
-                image_regions=unindexed_images,
+        # Spatial cluster detection if shape names lack explicit '_1', '_2' numeric suffixes
+        # Group text shapes and image frames into spatial cards based on proximity
+        if slide_type not in (SlideType.COVER, SlideType.CLOSING, SlideType.STATIC) and (unindexed_text or unindexed_images):
+            # Sort dynamic elements spatially (left to right, top to bottom)
+            candidate_shapes = [ts for ts in unindexed_text if ts.text and not any(kw in ts.text.lower() for kw in ["welcome", "congratulations", "#onehr", "http"])]
+            sample_photos = [img for img in unindexed_images if img.is_sample_photo]
+
+            if sample_photos and candidate_shapes:
+                # Group text box with nearest sample photo
+                paired_text: List[TextShapeInfo] = []
+                for p_idx, photo in enumerate(sorted(sample_photos, key=lambda p: (round(p.top_inches, 1), round(p.left_inches, 1)))):
+                    near_texts = [
+                        t for t in candidate_shapes
+                        if t not in paired_text and abs(t.left_inches - photo.left_inches) < 2.5 and abs(t.top_inches - (photo.top_inches + photo.height_inches)) < 2.0
+                    ]
+                    if not near_texts:
+                        near_texts = [
+                            t for t in candidate_shapes
+                            if t not in paired_text and abs(t.left_inches - photo.left_inches) < 3.0
+                        ]
+
+                    t_match = near_texts[0] if near_texts else None
+                    if t_match:
+                        paired_text.append(t_match)
+
+                    bbox = [
+                        min(photo.left_inches, t_match.left_inches if t_match else photo.left_inches),
+                        min(photo.top_inches, t_match.top_inches if t_match else photo.top_inches),
+                        max(photo.width_inches, t_match.width_inches if t_match else photo.width_inches),
+                        round(photo.height_inches + (t_match.height_inches if t_match else 0.0), 2),
+                    ]
+
+                    slots_info.append(
+                        EmployeeSlotInfo(
+                            slot_index=p_idx,
+                            bounding_box=bbox,
+                            text_shapes=[t_match] if t_match else [],
+                            image_regions=[photo],
+                        )
+                    )
+
+                remaining_text = [t for t in unindexed_text if t not in paired_text]
+                remaining_images = [img for img in unindexed_images if img not in sample_photos]
+                capacity = len(slots_info)
+                slide_type = SlideType.REPEATING_CONTENT if capacity > 1 else slide_type
+                unindexed_text = remaining_text
+                unindexed_images = remaining_images
+
+        if not slots_info:
+            capacity = 1 if unindexed_text else 0
+            slots_info.append(
+                EmployeeSlotInfo(
+                    slot_index=0,
+                    text_shapes=unindexed_text,
+                    image_regions=unindexed_images,
+                )
             )
-        )
-        unindexed_text = []
-        unindexed_images = []
+            unindexed_text = []
+            unindexed_images = []
 
     return SlideLayoutModel(
         slide_type=slide_type,

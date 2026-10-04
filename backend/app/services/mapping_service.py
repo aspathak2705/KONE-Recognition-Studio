@@ -125,22 +125,8 @@ def validate_mapping_config(
                                 details={"shape_name": detail.shape_name, "slide_index": slide_idx, "slot_index": slot.slot_index},
                             )
                         )
-                    if detail.shape_name in used_shapes:
-                        err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields/slots ('{used_shapes[detail.shape_name]}' and slot #{slot.slot_index+1} '{field_name}')."
-                        errors.append(err_msg)
-                        structured_errors.append(
-                            ErrorDetail(
-                                code="AMBIGUOUS_SHAPE_MAPPING",
-                                field=field_name,
-                                message=err_msg,
-                                details={
-                                    "shape_name": detail.shape_name,
-                                    "conflicting_field": used_shapes[detail.shape_name],
-                                },
-                            )
-                        )
-                    else:
-                        used_shapes[detail.shape_name] = f"slot_{slot.slot_index}_{field_name}"
+                    # Register mapped shape
+                    used_shapes[detail.shape_name] = f"slot_{slot.slot_index}"
     else:
         # Legacy single-card mapping validation mode
         mapping_fields = [

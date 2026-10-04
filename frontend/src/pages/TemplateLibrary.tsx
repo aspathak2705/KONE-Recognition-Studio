@@ -113,8 +113,6 @@ export function TemplateLibrary() {
     (v) => v.version_number === selectedTemplate.current_version
   );
   const currentInspection = currentVersionObj?.inspection_data;
-  const availableShapes =
-    currentInspection?.slides[0]?.text_shapes.map((s) => s.shape_name) || [];
 
   return (
     <div className="space-y-8">
@@ -295,65 +293,62 @@ export function TemplateLibrary() {
               {/* Shape Mapping Configuration */}
               <div className="space-y-4 pt-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Settings2 className="h-4 w-4 text-primary" />
-                    Field Shape Mapping Configuration
-                  </h4>
+                  <div>
+                    <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <Settings2 className="h-4 w-4 text-primary" />
+                      Employee Card & Field Layout Mapping
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Configure text and photo regions for employee recognition presentations.
+                    </p>
+                  </div>
                   <button
                     onClick={handleSaveMapping}
                     disabled={isSavingMapping}
-                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
                   >
                     {isSavingMapping ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                     Save Mapping
                   </button>
                 </div>
 
+                {/* HR-Facing Semantic Form */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
-                    { key: "employee_name", label: "Employee Name Shape" },
-                    { key: "designation", label: "Designation Shape" },
-                    { key: "branch", label: "Branch / Location Shape" },
-                    { key: "award_name", label: "Award Name Shape" },
+                    { key: "employee_name", label: "Employee Name Region" },
+                    { key: "designation", label: "Designation / Role Region" },
+                    { key: "branch", label: "Branch / Location Region" },
+                    { key: "award_name", label: "Award Title Region" },
                   ].map((field) => {
                     const currentVal = (editingMapping as any)[field.key]?.shape_name || "";
+                    const slideShapes = currentInspection?.slides[0]?.text_shapes || [];
                     return (
                       <div key={field.key} className="space-y-1.5 p-3 rounded-md border border-border bg-background">
                         <label className="text-xs font-medium text-foreground">{field.label}</label>
-                        {availableShapes.length > 0 ? (
-                          <select
-                            value={currentVal}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditingMapping((prev) => ({
-                                ...prev,
-                                [field.key]: val ? { shape_name: val, required: true } : undefined,
-                              }));
-                            }}
-                            className="w-full text-xs rounded-md border border-border bg-background p-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          >
-                            <option value="">-- Select Shape --</option>
-                            {availableShapes.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
+                        <select
+                          value={currentVal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditingMapping((prev) => ({
+                              ...prev,
+                              [field.key]: val ? { shape_name: val, required: true } : undefined,
+                            }));
+                          }}
+                          className="w-full text-xs rounded-md border border-border bg-background p-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="">-- Select Template Region --</option>
+                          {slideShapes.map((s) => {
+                            const snippet = s.text ? ` ("${s.text.replace(/\n/g, " ").substring(0, 25)}")` : "";
+                            const friendlyName = s.shape_name.startsWith("Text") || s.shape_name.startsWith("Title")
+                              ? `Text Region — ${s.shape_name}${snippet}`
+                              : s.shape_name;
+                            return (
+                              <option key={s.shape_name} value={s.shape_name}>
+                                {friendlyName}
                               </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            value={currentVal}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditingMapping((prev) => ({
-                                ...prev,
-                                [field.key]: val ? { shape_name: val, required: true } : undefined,
-                              }));
-                            }}
-                            placeholder="Enter shape name (e.g. EmployeeName)"
-                            className="w-full text-xs rounded-md border border-border bg-background p-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          />
-                        )}
+                            );
+                          })}
+                        </select>
                       </div>
                     );
                   })}
