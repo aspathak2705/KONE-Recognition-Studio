@@ -26,12 +26,31 @@ class FieldMappingDetail(BaseModel):
     required: bool = True
 
 
+class SlotMappingDetail(BaseModel):
+    slot_index: int = 0
+    employee_name: Optional[FieldMappingDetail] = None
+    designation: Optional[FieldMappingDetail] = None
+    branch: Optional[FieldMappingDetail] = None
+    award_name: Optional[FieldMappingDetail] = None
+    photo_placeholder: Optional[FieldMappingDetail] = None
+
+
+class CardLayoutConfig(BaseModel):
+    cards_per_slide: int = 1
+    overflow_mode: str = "CLONE_SLIDE"  # CLONE_SLIDE or TRUNCATE
+    clear_unfilled_slots: bool = True
+    clear_sample_photos: bool = True
+
+
 class FieldMappingConfig(BaseModel):
     employee_name: Optional[FieldMappingDetail] = None
     designation: Optional[FieldMappingDetail] = None
     branch: Optional[FieldMappingDetail] = None
     award_name: Optional[FieldMappingDetail] = None
     template_slide_index: int = 0  # 0-based slide index for generation source layout
+    # Multi-card slot support
+    slots: List[SlotMappingDetail] = Field(default_factory=list)
+    layout_config: CardLayoutConfig = Field(default_factory=CardLayoutConfig)
 
 
 class InspectionStatus(str, Enum):

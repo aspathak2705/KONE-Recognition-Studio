@@ -103,6 +103,19 @@ def find_shape_by_name(shapes, shape_name: str):
     return None
 
 
+def clear_shape_content(shape):
+    """Clear text or remove picture shape without deleting non-photo elements."""
+    if shape.has_text_frame:
+        shape.text_frame.text = ""
+    elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE or (hasattr(shape, "is_placeholder") and shape.is_placeholder and str(shape.placeholder_format.type) == "PICTURE (18)"):
+        # Remove placeholder picture shape element safely from slide if permitted
+        try:
+            sp = shape._element
+            sp.getparent().remove(sp)
+        except Exception:
+            pass
+
+
 def generate_powerpoint_presentation(
     template_content: bytes,
     template_filename: str,
@@ -132,51 +145,125 @@ def generate_powerpoint_presentation(
     blank_layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
     template_slide_source = prs.slides[slide_idx]
 
-    # Map required shapes on each slide
-    field_map = {
-        "employee_name": mapping_config.employee_name.shape_name if mapping_config.employee_name else None,
-        "designation": mapping_config.designation.shape_name if mapping_config.designation else None,
-        "branch": mapping_config.branch.shape_name if mapping_config.branch else None,
-        "award_name": mapping_config.award_name.shape_name if mapping_config.award_name else None,
-    }
+    # Multi-card slot mode vs Single-card legacy mode
+    slots_config = mapping_config.slots if (mapping_config and mapping_config.slots) else []
+    cards_per_slide = len(slots_config) if slots_config else 1
 
-    # Populate slides: 1 slide per employee record
-    for idx, rec in enumerate(valid_records):
-        if idx == 0 and slide_idx == 0:
-            target_slide = template_slide_source
-        else:
-            target_slide = prs.slides.add_slide(blank_layout)
-            copy_slide_elements(template_slide_source, target_slide)
+    if cards_per_slide > 1:
+        # Multi-card capacity mode (e.g. 2, 4, 7, 8 cards/slide)
+        num_records = len(valid_records)
+        num_slides_needed = (num_records + cards_per_slide - 1) // cards_per_slide
 
-        # Substitute mapped fields
-        record_dict = {
-            "employee_name": rec.employee_name,
-            "designation": rec.designation,
-            "branch": rec.branch,
-            "award_name": rec.award_name,
+        for s_idx in range(num_slides_needed):
+            if s_idx == 0 and slide_idx == 0:
+                current_slide = template_slide_source
+            else:
+                current_slide = prs.slides.add_slide(blank_layout)
+                copy_slide_elements(template_slide_source, current_slide)
+
+            rec_start = s_idx * cards_per_slide
+            for card_slot_idx in range(cards_per_slide):
+                rec_idx = rec_start + card_slot_idx
+                slot_mapping = slots_config[card_slot_idx] if card_slot_idx < len(slots_config) else None
+
+                if rec_idx < num_records:
+                    rec = valid_records[rec_idx]
+                    record_dict = {
+                        "employee_name": rec.employee_name,
+                        "designation": rec.designation,
+                        "branch": rec.branch,
+                        "award_name": rec.award_name,
+                    }
+
+                    if slot_mapping:
+                        field_map = {
+                            "employee_name": slot_mapping.employee_name.shape_name if slot_mapping.employee_name else None,
+                            "designation": slot_mapping.designation.shape_name if slot_mapping.designation else None,
+                            "branch": slot_mapping.branch.shape_name if slot_mapping.branch else None,
+                            "award_name": slot_mapping.award_name.shape_name if slot_mapping.award_name else None,
+                        }
+                        for field_name, s_name in field_map.items():
+                            if s_name:
+                                shape = find_shape_by_name(current_slide.shapes, s_name)
+                                val = record_dict.get(field_name, "")
+                                if len(val) > 40:
+                                    warn_msg = f"TEXT_LENGTH_WARNING: Slide #{s_idx+1} slot #{card_slot_idx+1} field '{field_name}' length ({len(val)} chars) exceeds threshold (40 chars); verify layout fit."
+                                    warnings.append(warn_msg)
+                                    structured_warnings.append(
+                                        TextLengthWarningDetail(
+                                            field=field_name,
+                                            slide_number=s_idx + 1,
+                                            character_count=len(val),
+                                            threshold=40,
+                                            message=warn_msg,
+                                        )
+                                    )
+                                if shape:
+                                    substitute_text_in_shape(shape, val)
+
+                        # Clear sample photo if specified
+                        if slot_mapping.photo_placeholder and slot_mapping.photo_placeholder.shape_name:
+                            p_shape = find_shape_by_name(current_slide.shapes, slot_mapping.photo_placeholder.shape_name)
+                            if p_shape:
+                                clear_shape_content(p_shape)
+                else:
+                    # Unfilled card slot on last slide: clear text shapes and sample photo placeholders
+                    if slot_mapping:
+                        field_map = {
+                            "employee_name": slot_mapping.employee_name.shape_name if slot_mapping.employee_name else None,
+                            "designation": slot_mapping.designation.shape_name if slot_mapping.designation else None,
+                            "branch": slot_mapping.branch.shape_name if slot_mapping.branch else None,
+                            "award_name": slot_mapping.award_name.shape_name if slot_mapping.award_name else None,
+                            "photo_placeholder": slot_mapping.photo_placeholder.shape_name if slot_mapping.photo_placeholder else None,
+                        }
+                        for s_name in field_map.values():
+                            if s_name:
+                                shape = find_shape_by_name(current_slide.shapes, s_name)
+                                if shape:
+                                    clear_shape_content(shape)
+    else:
+        # Legacy single-card mode (1 record per slide)
+        field_map = {
+            "employee_name": mapping_config.employee_name.shape_name if mapping_config.employee_name else None,
+            "designation": mapping_config.designation.shape_name if mapping_config.designation else None,
+            "branch": mapping_config.branch.shape_name if mapping_config.branch else None,
+            "award_name": mapping_config.award_name.shape_name if mapping_config.award_name else None,
         }
 
-        for field_name, s_name in field_map.items():
-            if s_name:
-                shape = find_shape_by_name(target_slide.shapes, s_name)
-                val = record_dict.get(field_name, "")
-                
-                # Check for long text length warning heuristic (> 40 chars)
-                if len(val) > 40:
-                    warn_msg = f"TEXT_LENGTH_WARNING: Slide #{idx+1} field '{field_name}' length ({len(val)} chars) exceeds threshold (40 chars); verify layout fit."
-                    warnings.append(warn_msg)
-                    structured_warnings.append(
-                        TextLengthWarningDetail(
-                            field=field_name,
-                            slide_number=idx + 1,
-                            character_count=len(val),
-                            threshold=40,
-                            message=warn_msg,
-                        )
-                    )
+        for idx, rec in enumerate(valid_records):
+            if idx == 0 and slide_idx == 0:
+                target_slide = template_slide_source
+            else:
+                target_slide = prs.slides.add_slide(blank_layout)
+                copy_slide_elements(template_slide_source, target_slide)
 
-                if shape:
-                    substitute_text_in_shape(shape, val)
+            record_dict = {
+                "employee_name": rec.employee_name,
+                "designation": rec.designation,
+                "branch": rec.branch,
+                "award_name": rec.award_name,
+            }
+
+            for field_name, s_name in field_map.items():
+                if s_name:
+                    shape = find_shape_by_name(target_slide.shapes, s_name)
+                    val = record_dict.get(field_name, "")
+                    
+                    if len(val) > 40:
+                        warn_msg = f"TEXT_LENGTH_WARNING: Slide #{idx+1} field '{field_name}' length ({len(val)} chars) exceeds threshold (40 chars); verify layout fit."
+                        warnings.append(warn_msg)
+                        structured_warnings.append(
+                            TextLengthWarningDetail(
+                                field=field_name,
+                                slide_number=idx + 1,
+                                character_count=len(val),
+                                threshold=40,
+                                message=warn_msg,
+                            )
+                        )
+
+                    if shape:
+                        substitute_text_in_shape(shape, val)
 
     generation_id = uuid.uuid4().hex
     generated_filename = f"{generation_id}.pptx"
@@ -216,3 +303,4 @@ def generate_powerpoint_presentation(
         json.dump(response.dict(), f, indent=2)
 
     return response
+
