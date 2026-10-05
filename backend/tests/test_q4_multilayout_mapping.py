@@ -3,7 +3,7 @@ from app.schemas.mapping import FieldMappingConfig, FieldMappingDetail, SlotMapp
 from app.services.template_registry_service import template_registry
 from app.services.mapping_service import validate_mapping_config, calculate_template_readiness
 
-Q4_TEMPLATE_ID = "f27b8666ba9d4dd0bd8d383581ba31ba"
+Q4_TEMPLATE_ID = "c1f49a8701954e19a86733d816561916"
 
 
 def test_q4_multilayout_mapping_ready():

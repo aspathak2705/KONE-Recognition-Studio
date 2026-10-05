@@ -5,8 +5,8 @@ from app.schemas.mapping import FieldMappingConfig, FieldMappingDetail, SlotMapp
 from app.services.pptx_generator import generate_powerpoint_presentation
 from app.services.template_registry_service import template_registry
 
-Q4_TEMPLATE_ID = "f27b8666ba9d4dd0bd8d383581ba31ba"
-NJ_TEMPLATE_ID = "046f2871d4ee4c53b2ee3d469a795432"
+Q4_TEMPLATE_ID = "c1f49a8701954e19a86733d816561916"
+NJ_TEMPLATE_ID = "2f967d49d08f433ea078dbaa3732f7f7"
 
 
 @pytest.fixture
