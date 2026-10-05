@@ -27,6 +27,8 @@ import {
   ShieldCheck,
   ShieldAlert,
   XCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface CreatePresentationProps {
@@ -45,10 +47,11 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
   const [excelResult, setExcelResult] = useState<ExcelValidationResponse | null>(null);
   const [isUploadingExcel, setIsUploadingExcel] = useState(false);
 
-  // Step 3 & 4: Generation
-  const [isGenerating, setIsGenerating] = useState(false);
+  // Step 3 & 4: Generation Lifecycle State Machine
+  const [generationStage, setGenerationStage] = useState<"IDLE" | "GENERATING" | "VERIFYING" | "COMPLETED" | "ERROR">("IDLE");
   const [genResponse, setGenResponse] = useState<GenerationResponse | null>(null);
   const [validationReport, setValidationReport] = useState<FidelityValidationReport | null>(null);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,9 +94,12 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
       return;
     }
 
-    setIsGenerating(true);
+    setGenerationStage("GENERATING");
     setErrorMsg(null);
     setValidationReport(null);
+    setShowTechnicalDetails(false);
+    setStep(4);
+
     try {
       const res = await generatePresentation({
         excel_file_id: excelResult.file_id,
@@ -101,18 +107,37 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
         template_version: selectedTemplate.current_version,
       });
       setGenResponse(res);
+
+      // Transition to verification stage
+      setGenerationStage("VERIFYING");
+
       try {
         const valReport = await fetchGenerationValidation(res.generation_id);
         setValidationReport(valReport);
       } catch {
-        // Fall back to genResponse validation status
+        // If validation endpoint fails to return, preserve response validation_status
       }
-      setStep(4);
+
+      setGenerationStage("COMPLETED");
     } catch (err: any) {
       setErrorMsg(err.message || "Presentation generation failed.");
       setGenResponse(null);
-    } finally {
-      setIsGenerating(false);
+      setGenerationStage("ERROR");
+    }
+  };
+
+  const getFriendlyFailureReason = (failureType: string, msg: string): string => {
+    switch (failureType) {
+      case "MISSING_PHOTO_REGION":
+        return "A photo region was not preserved in the presentation.";
+      case "MISSING_STATIC_ASSET":
+        return "Some template graphics or static layout elements were missing.";
+      case "GEOMETRY_DEVIATION":
+        return "An employee card or shape was displaced beyond acceptable layout boundaries.";
+      case "SEMANTIC_PLACEMENT_ERROR":
+        return "Some employee information was placed in the wrong card field.";
+      default:
+        return msg || "The generated presentation differs from the selected template.";
     }
   };
 
@@ -400,12 +425,16 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
 
             <button
               onClick={handleGenerate}
-              disabled={isGenerating}
+              disabled={generationStage === "GENERATING" || generationStage === "VERIFYING"}
               className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
             >
-              {isGenerating ? (
+              {generationStage === "GENERATING" ? (
                 <>
-                  <RefreshCw className="h-4 w-4 animate-spin" /> Generating Presentation...
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Generating presentation...
+                </>
+              ) : generationStage === "VERIFYING" ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Validating presentation fidelity...
                 </>
               ) : (
                 <>
@@ -417,112 +446,242 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
         </div>
       )}
 
-      {/* STEP 4: Complete & Download */}
-      {step === 4 && genResponse && (
+      {/* STEP 4: Generation / Verification / Output */}
+      {step === 4 && (
         <div className="rounded-lg border border-border bg-card p-8 text-center space-y-6 shadow-xs">
-          {genResponse.validation_status === "VERIFIED" ? (
-            <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
-              <ShieldCheck className="h-8 w-8" />
-            </div>
-          ) : (
-            <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
-              <ShieldAlert className="h-8 w-8" />
+          {/* 1. In-Progress States: GENERATING or VERIFYING */}
+          {(generationStage === "GENERATING" || generationStage === "VERIFYING") && (
+            <div className="py-8 space-y-4">
+              <div className="h-16 w-16 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                <RefreshCw className="h-8 w-8 animate-spin" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-foreground">
+                  {generationStage === "GENERATING"
+                    ? "Generating presentation..."
+                    : "Validating presentation fidelity..."}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                  {generationStage === "GENERATING"
+                    ? "Populating recognition records and copying master template layout elements..."
+                    : "Performing automated structural, geometry, and asset fidelity verification against master template..."}
+                </p>
+              </div>
             </div>
           )}
 
-          <div>
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <h3 className="text-xl font-bold text-foreground">
-                {genResponse.validation_status === "VERIFIED"
-                  ? "Presentation Verified & Ready for Download"
-                  : "Presentation Fidelity Verification Blocked"}
-              </h3>
-              <span
-                className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider ${
-                  genResponse.validation_status === "VERIFIED"
-                    ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                    : "bg-rose-500/10 text-rose-600 border border-rose-500/20"
-                }`}
-              >
-                {genResponse.validation_status || "VERIFIED"}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1 max-w-lg mx-auto">
-              {genResponse.validation_status === "VERIFIED"
-                ? `Generated PowerPoint presentation verified against master template fidelity manifest (${genResponse.slide_count} slides for ${genResponse.record_count} recognition records).`
-                : "Post-generation verification failed template fidelity checks. Download is blocked to protect slide presentation quality."}
-            </p>
-          </div>
-
-          {/* Verification Diagnostics Box */}
-          {validationReport && (
-            <div className="rounded-md border border-border bg-muted/40 p-4 text-left max-w-xl mx-auto space-y-3">
-              <div className="flex items-center justify-between text-xs font-semibold text-foreground border-b border-border/50 pb-2">
-                <span>Fidelity Verification Score</span>
-                <span
-                  className={
-                    validationReport.verification_status === "VERIFIED"
-                      ? "text-emerald-600 font-bold"
-                      : "text-rose-600 font-bold"
-                  }
+          {/* 2. Error State: Generation / Network Error */}
+          {generationStage === "ERROR" && (
+            <div className="space-y-6">
+              <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
+                <XCircle className="h-8 w-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-foreground">Generation Encountered an Error</h3>
+                <p className="text-xs text-rose-600 mt-1 max-w-lg mx-auto">
+                  {errorMsg || "An unexpected error occurred during presentation generation or verification."}
+                </p>
+              </div>
+              <div className="pt-2 flex justify-center gap-4">
+                <button
+                  onClick={() => setStep(3)}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 cursor-pointer"
                 >
-                  {Math.round(validationReport.overall_score * 100)}% ({validationReport.slides_passed}/{validationReport.slides_checked} slides passed)
-                </span>
+                  Return to Review
+                </button>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
-                <div>Structure: <span className="font-medium text-foreground">{validationReport.structural_result}</span></div>
-                <div>Geometry: <span className="font-medium text-foreground">{validationReport.geometry_result}</span></div>
-                <div>Static Assets: <span className="font-medium text-foreground">{validationReport.static_asset_result}</span></div>
-                <div>Semantics: <span className="font-medium text-foreground">{validationReport.semantic_result}</span></div>
-                <div>Photo Slots: <span className="font-medium text-foreground">{validationReport.photo_slot_result}</span></div>
-                <div>Visual Similarity: <span className="font-medium text-foreground">{validationReport.visual_result}</span></div>
-              </div>
+            </div>
+          )}
 
-              {validationReport.failures && validationReport.failures.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
-                  <div className="text-[11px] font-semibold text-rose-600">Verification Issues Detected:</div>
-                  {validationReport.failures.slice(0, 3).map((f, idx) => (
-                    <div key={idx} className="text-[11px] text-rose-500/90 flex items-start gap-1.5">
-                      <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span>Slide {f.slide_number}: {f.message}</span>
+          {/* 3. Completed State: VERIFIED or BLOCKED */}
+          {generationStage === "COMPLETED" && genResponse && (
+            <div className="space-y-6">
+              {genResponse.validation_status === "VERIFIED" ? (
+                <>
+                  <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
+                    <ShieldCheck className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground">Presentation Verified & Ready</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Generated presentation containing {genResponse.slide_count} slides for {genResponse.record_count} recognition records.
+                    </p>
+                  </div>
+
+                  {/* Clean HR-friendly Verified Checklist */}
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 max-w-md mx-auto text-left space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>Presentation generated successfully</span>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>Template layout structure verified</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>Formatting & element geometry verified</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>Template graphics & branding preserved</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>Employee information verified</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>Photo regions preserved for portraits</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
+                    <ShieldAlert className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground">Presentation could not be verified</h3>
+                    <p className="text-xs text-rose-600 mt-1 max-w-lg mx-auto">
+                      Post-generation fidelity checks detected structural differences between the generated output and the master template. Download is blocked to preserve presentation quality.
+                    </p>
+                  </div>
+
+                  {/* Clean HR-friendly Blocked Reasons */}
+                  <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 max-w-md mx-auto text-left space-y-2">
+                    <div className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">
+                      Fidelity Verification Failures:
+                    </div>
+                    {validationReport?.failures && validationReport.failures.length > 0 ? (
+                      validationReport.failures.slice(0, 3).map((f, idx) => (
+                        <div key={idx} className="flex items-start gap-2 text-xs text-rose-600">
+                          <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
+                          <span>Slide {f.slide_number}: {getFriendlyFailureReason(f.failure_type, f.message)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex items-start gap-2 text-xs text-rose-600">
+                        <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
+                        <span>The generated presentation differs from the selected template.</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Collapsible Verification Details (High-level checks) */}
+              {validationReport && (
+                <div className="max-w-xl mx-auto pt-2">
+                  <button
+                    onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    {showTechnicalDetails ? (
+                      <>
+                        <EyeOff className="h-3.5 w-3.5" /> Hide verification details
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3.5 w-3.5" /> View verification details
+                      </>
+                    )}
+                  </button>
+
+                  {showTechnicalDetails && (
+                    <div className="mt-3 rounded-md border border-border bg-muted/40 p-4 text-left space-y-3">
+                      <div className="flex items-center justify-between text-xs font-semibold text-foreground border-b border-border/50 pb-2">
+                        <span>Fidelity Verification Status</span>
+                        <span
+                          className={
+                            validationReport.verification_status === "VERIFIED"
+                              ? "text-emerald-600 font-bold"
+                              : "text-rose-600 font-bold"
+                          }
+                        >
+                          {validationReport.verification_status} ({validationReport.slides_passed}/{validationReport.slides_checked} slides passed)
+                        </span>
+                      </div>
+
+                      {/* Generic Validation Categories Rendered Dynamically */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
+                          <span className="text-muted-foreground">Layout</span>
+                          <span className={`font-semibold ${validationReport.structural_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {validationReport.structural_result}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
+                          <span className="text-muted-foreground">Formatting</span>
+                          <span className={`font-semibold ${validationReport.geometry_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {validationReport.geometry_result}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
+                          <span className="text-muted-foreground">Graphics</span>
+                          <span className={`font-semibold ${validationReport.static_asset_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {validationReport.static_asset_result}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
+                          <span className="text-muted-foreground">Employee Info</span>
+                          <span className={`font-semibold ${validationReport.semantic_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {validationReport.semantic_result}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
+                          <span className="text-muted-foreground">Photo Regions</span>
+                          <span className={`font-semibold ${validationReport.photo_slot_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {validationReport.photo_slot_result}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
+                          <span className="text-muted-foreground">Visual Fidelity</span>
+                          <span className={`font-semibold ${validationReport.visual_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {validationReport.visual_result}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Action Buttons: Gated Download */}
+              <div className="pt-4 flex justify-center gap-4 border-t border-border">
+                {genResponse.validation_status === "VERIFIED" ? (
+                  <a
+                    href={getDownloadUrl(genResponse.generation_id)}
+                    download
+                    className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" /> Download Presentation (.pptx)
+                  </a>
+                ) : (
+                  <button
+                    disabled
+                    className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
+                    title="Download blocked: post-generation verification detected fidelity failures"
+                  >
+                    <Download className="h-4 w-4" /> Download Blocked
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    setStep(1);
+                    setExcelResult(null);
+                    setGenResponse(null);
+                    setValidationReport(null);
+                    setGenerationStage("IDLE");
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  Create Another Presentation
+                </button>
+              </div>
             </div>
           )}
-
-          <div className="pt-2 flex justify-center gap-4">
-            {genResponse.validation_status === "VERIFIED" ? (
-              <a
-                href={getDownloadUrl(genResponse.generation_id)}
-                download
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
-              >
-                <Download className="h-4 w-4" /> Download Presentation (.pptx)
-              </a>
-            ) : (
-              <button
-                disabled
-                className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
-                title="Download blocked due to fidelity verification failures"
-              >
-                <Download className="h-4 w-4" /> Download Blocked (Failed Fidelity)
-              </button>
-            )}
-
-            <button
-              onClick={() => {
-                setStep(1);
-                setExcelResult(null);
-                setGenResponse(null);
-                setValidationReport(null);
-              }}
-              className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
-            >
-              Create Another Presentation
-            </button>
-          </div>
         </div>
       )}
     </div>
