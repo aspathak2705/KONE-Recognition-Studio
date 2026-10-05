@@ -31,14 +31,14 @@ interface CreatePresentationProps {
 export function CreatePresentation({ onNavigateToTemplates }: CreatePresentationProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // Step 1: Excel Data
-  const [excelResult, setExcelResult] = useState<ExcelValidationResponse | null>(null);
-  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
-
-  // Step 2: Registered Template Selection
+  // Step 1: Master Template Selection
   const [templates, setTemplates] = useState<TemplateMetadata[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateMetadata | null>(null);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+  // Step 2: Excel Recognition Data
+  const [excelResult, setExcelResult] = useState<ExcelValidationResponse | null>(null);
+  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
 
   // Step 3 & 4: Generation
   const [isGenerating, setIsGenerating] = useState(false);
@@ -81,7 +81,7 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
 
   const handleGenerate = async () => {
     if (!excelResult?.file_id || !selectedTemplate) {
-      setErrorMsg("Please provide recognition Excel data and select a master template.");
+      setErrorMsg("Please select a master template and provide recognition Excel data.");
       return;
     }
 
@@ -117,8 +117,8 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
       <div className="rounded-lg border border-border bg-card p-4 shadow-xs">
         <div className="grid grid-cols-4 gap-2 text-center text-xs font-semibold">
           {[
-            { s: 1, label: "1. Recognition Data" },
-            { s: 2, label: "2. Master Template" },
+            { s: 1, label: "1. Master Template" },
+            { s: 2, label: "2. Recognition Data" },
             { s: 3, label: "3. Review & Confirm" },
             { s: 4, label: "4. Presentation Output" },
           ].map((item) => {
@@ -149,77 +149,14 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
         </div>
       )}
 
-      {/* STEP 1: Excel Data Upload */}
+      {/* STEP 1: Select Master Template */}
       {step === 1 && (
-        <div className="rounded-lg border border-border bg-card p-6 space-y-6 shadow-xs">
-          <div className="border-b border-border pb-4">
-            <h3 className="text-lg font-bold text-foreground">Step 1 — Recognition Data Upload</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Upload recognition Excel data sheet (`.xlsx`). Columns are automatically detected.
-            </p>
-          </div>
-
-          <FileUpload
-            accept=".xlsx"
-            acceptLabel="Excel files (.xlsx) up to 20MB"
-            onFileSelect={handleExcelSelect}
-            isLoading={isUploadingExcel}
-          />
-
-          {excelResult && (
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between p-4 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-600">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 shrink-0" />
-                  <div>
-                    <p className="font-bold text-sm">{excelResult.filename} Validated</p>
-                    <p className="text-xs">
-                      {excelResult.valid_rows} recognition records ready for presentation generation.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Detected Excel Columns */}
-              {excelResult.detected_columns && excelResult.detected_columns.length > 0 && (
-                <div className="p-3 rounded-md border border-border bg-muted/20 space-y-1.5">
-                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Detected Data Columns:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {excelResult.detected_columns.map((col) => (
-                      <span
-                        key={col}
-                        className="px-2 py-0.5 rounded text-[11px] bg-background border border-border font-mono text-foreground"
-                      >
-                        {col}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end pt-2">
-                <button
-                  onClick={() => setStep(2)}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 cursor-pointer"
-                >
-                  Continue to Template Selection <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* STEP 2: Template Selection */}
-      {step === 2 && (
         <div className="rounded-lg border border-border bg-card p-6 space-y-6 shadow-xs">
           <div className="flex items-center justify-between border-b border-border pb-4">
             <div>
-              <h3 className="text-lg font-bold text-foreground">Step 2 — Select Master Template</h3>
+              <h3 className="text-lg font-bold text-foreground">Step 1 — Select Master Template</h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Select an official KONE master presentation template. Layouts adapt automatically to record counts.
+                Choose the official KONE PowerPoint template for your recognition presentation.
               </p>
             </div>
             {onNavigateToTemplates && (
@@ -296,17 +233,81 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
             </div>
           )}
 
+          <div className="flex items-center justify-end pt-4 border-t border-border">
+            <button
+              onClick={() => setStep(2)}
+              disabled={!selectedTemplate || selectedTemplate.generation_readiness !== "ready_for_generation"}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+            >
+              Continue to Recognition Data <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 2: Recognition Data Upload */}
+      {step === 2 && (
+        <div className="rounded-lg border border-border bg-card p-6 space-y-6 shadow-xs">
+          <div className="border-b border-border pb-4">
+            <h3 className="text-lg font-bold text-foreground">Step 2 — Upload Recognition Data</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Upload recognition Excel data sheet (`.xlsx`) matching template requirements.
+            </p>
+          </div>
+
+          <FileUpload
+            accept=".xlsx"
+            acceptLabel="Excel files (.xlsx) up to 20MB"
+            onFileSelect={handleExcelSelect}
+            isLoading={isUploadingExcel}
+          />
+
+          {excelResult && (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between p-4 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-600">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-bold text-sm">{excelResult.filename} Validated</p>
+                    <p className="text-xs">
+                      {excelResult.valid_rows} recognition records ready for presentation generation.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detected Excel Columns */}
+              {excelResult.detected_columns && excelResult.detected_columns.length > 0 && (
+                <div className="p-3 rounded-md border border-border bg-muted/20 space-y-1.5">
+                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Detected Data Columns:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {excelResult.detected_columns.map((col) => (
+                      <span
+                        key={col}
+                        className="px-2 py-0.5 rounded text-[11px] bg-background border border-border font-mono text-foreground"
+                      >
+                        {col}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between pt-4 border-t border-border">
             <button
               onClick={() => setStep(1)}
               className="rounded-md border border-border bg-card px-4 py-2 text-xs font-medium text-foreground hover:bg-muted cursor-pointer"
             >
-              Back
+              Back to Template
             </button>
 
             <button
               onClick={() => setStep(3)}
-              disabled={!selectedTemplate || selectedTemplate.generation_readiness !== "ready_for_generation"}
+              disabled={!excelResult || excelResult.valid_rows === 0}
               className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
             >
               Review Presentation <ArrowRight className="h-4 w-4" />
@@ -321,11 +322,31 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
           <div className="border-b border-border pb-4">
             <h3 className="text-lg font-bold text-foreground">Step 3 — Review & Confirm Presentation</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Confirm your recognition dataset and master template before generating the PowerPoint file.
+              Confirm your master template and recognition dataset before generating the PowerPoint file.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Template Summary */}
+            <div className="p-4 rounded-lg border border-border bg-muted/20 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">PowerPoint Master</p>
+              <div>
+                <p className="text-sm font-bold text-foreground">{selectedTemplate?.name}</p>
+                <p className="text-xs text-muted-foreground">Version {selectedTemplate?.current_version} ({selectedTemplate?.aspect_ratio})</p>
+              </div>
+
+              <div className="text-xs border-t border-border/50 pt-2 space-y-1">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Supported Slide Capacities:</span>
+                  <span className="font-semibold text-foreground">{capacities.join(", ")}</span>
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Estimated Slide Count:</span>
+                  <span className="font-bold text-primary">~{estSlides} Content Slide(s)</span>
+                </div>
+              </div>
+            </div>
+
             {/* Excel Data Summary */}
             <div className="p-4 rounded-lg border border-border bg-muted/20 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recognition Dataset</p>
@@ -346,26 +367,6 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
                 </div>
               </div>
             </div>
-
-            {/* Template Summary */}
-            <div className="p-4 rounded-lg border border-border bg-muted/20 space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">PowerPoint Master</p>
-              <div>
-                <p className="text-sm font-bold text-foreground">{selectedTemplate?.name}</p>
-                <p className="text-xs text-muted-foreground">Version {selectedTemplate?.current_version} ({selectedTemplate?.aspect_ratio})</p>
-              </div>
-
-              <div className="text-xs border-t border-border/50 pt-2 space-y-1">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span>Supported Slide Capacities:</span>
-                  <span className="font-semibold text-foreground">{capacities.join(", ")}</span>
-                </div>
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span>Estimated Slide Count:</span>
-                  <span className="font-bold text-primary">~{estSlides} Content Slide(s)</span>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Photo Note */}
@@ -381,7 +382,7 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
               onClick={() => setStep(2)}
               className="rounded-md border border-border bg-card px-4 py-2 text-xs font-medium text-foreground hover:bg-muted cursor-pointer"
             >
-              Back
+              Back to Data Upload
             </button>
 
             <button
