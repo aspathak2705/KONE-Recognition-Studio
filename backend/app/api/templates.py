@@ -86,9 +86,15 @@ def update_template_mapping_endpoint(
     )
 
 
+@router.delete("/{template_id}")
+def delete_template_endpoint(template_id: str):
+    return template_registry.delete_template(template_id)
+
+
 @router.post("/{template_id}/archive", response_model=TemplateMetadata)
 def archive_template_endpoint(template_id: str):
     return template_registry.archive_template(template_id)
+
 
 
 # Legacy & helper endpoints

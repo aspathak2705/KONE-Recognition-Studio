@@ -3,7 +3,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -13,7 +13,10 @@ from app.schemas.mapping import (
     InspectionStatus,
     MappingStatus,
     GenerationReadiness,
+    TemplateRequirements,
+    SemanticFieldInfo,
 )
+
 from app.schemas.template_registry import (
     TemplateMetadata,
     TemplateVersion,
@@ -157,6 +160,7 @@ class TemplateRegistryService:
                 inspection_status=InspectionStatus.SUCCESS if inspection.valid else InspectionStatus.FAILED,
                 mapping_status=readiness.mapping_status,
                 generation_readiness=readiness.generation_readiness,
+                requirements=readiness.requirements,
                 mapping_config=suggested,
                 inspection_data=inspection,
                 created_at=now_str,
@@ -168,6 +172,9 @@ class TemplateRegistryService:
             meta.updated_at = now_str
             meta.generation_readiness = readiness.generation_readiness
             meta.mapping_status = readiness.mapping_status
+            meta.requirements = readiness.requirements
+            meta.supported_capacities = readiness.requirements.supported_capacities if readiness.requirements else [1]
+            meta.has_photo_support = readiness.requirements.has_photo_support if readiness.requirements else False
 
             self.save_template_metadata(meta)
 
@@ -211,6 +218,7 @@ class TemplateRegistryService:
             inspection_status=InspectionStatus.SUCCESS if inspection.valid else InspectionStatus.FAILED,
             mapping_status=readiness.mapping_status,
             generation_readiness=readiness.generation_readiness,
+            requirements=readiness.requirements,
             mapping_config=suggested,
             inspection_data=inspection,
             created_at=now_str,
@@ -225,6 +233,9 @@ class TemplateRegistryService:
             mapping_status=readiness.mapping_status,
             generation_readiness=readiness.generation_readiness,
             aspect_ratio=inspection.aspect_ratio,
+            requirements=readiness.requirements,
+            supported_capacities=readiness.requirements.supported_capacities if readiness.requirements else [1],
+            has_photo_support=readiness.requirements.has_photo_support if readiness.requirements else False,
             versions=[v1],
             is_archived=False,
             created_at=now_str,
@@ -240,6 +251,7 @@ class TemplateRegistryService:
             is_duplicate_hash=False,
             message=f"Template '{name}' (v1) registered successfully.",
         )
+
 
     def update_template_mapping(
         self,
@@ -298,7 +310,35 @@ class TemplateRegistryService:
         self.save_template_metadata(meta)
         return meta
 
+    def delete_template(self, template_id: str) -> Dict[str, Any]:
+        """
+        Permanently delete template from active library.
+        Deletes template folder (metadata, inspection, mapping, master PPTXs).
+        Retains immutable historical generation records in settings.GENERATED_OUTPUTS_DIR.
+        """
+        import shutil
+        tpl_dir = self._get_template_dir(template_id)
+        if not tpl_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+
+        meta = self.get_template(template_id)
+        template_name = meta.name if meta else "Unknown"
+
+        # Safely remove template folder
+        try:
+            shutil.rmtree(tpl_dir)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
+
+        return {
+            "success": True,
+            "template_id": template_id,
+            "name": template_name,
+            "message": f"Template '{template_name}' successfully deleted.",
+        }
+
     def get_template_version_pptx(self, template_id: str, version_number: Optional[int] = None) -> Tuple[bytes, TemplateVersion]:
+
         meta = self.get_template(template_id)
         if not meta:
             raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")

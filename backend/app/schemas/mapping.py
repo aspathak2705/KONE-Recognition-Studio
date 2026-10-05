@@ -19,6 +19,23 @@ class TextLengthWarningDetail(BaseModel):
     message: str
 
 
+class SemanticFieldInfo(BaseModel):
+    field_key: str
+    display_label: str
+    required: bool = True
+    data_type: str = "string"
+    matched_column: Optional[str] = None
+    confidence: float = 1.0
+
+
+class TemplateRequirements(BaseModel):
+    required_fields: List[SemanticFieldInfo] = Field(default_factory=list)
+    optional_fields: List[SemanticFieldInfo] = Field(default_factory=list)
+    supported_capacities: List[int] = Field(default_factory=list)
+    has_photo_support: bool = False
+
+
+
 class FieldMappingDetail(BaseModel):
     shape_name: str
     shape_id: Optional[str] = None
@@ -86,11 +103,13 @@ class TemplateReadinessResponse(BaseModel):
     inspection_status: InspectionStatus
     mapping_status: MappingStatus
     generation_readiness: GenerationReadiness
+    requirements: Optional[TemplateRequirements] = None
     configured_mapping: Optional[FieldMappingConfig] = None
     suggested_mapping: Optional[FieldMappingConfig] = None
     warnings: List[str] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
     structured_errors: List[ErrorDetail] = Field(default_factory=list)
+
 
 
 class GenerationRequest(BaseModel):

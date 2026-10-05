@@ -26,9 +26,11 @@ class ExcelValidationResponse(BaseModel):
     valid_rows: int
     invalid_rows: int
     duplicate_rows: int
+    detected_columns: List[str] = Field(default_factory=list)
     errors: List[ValidationErrorItem] = Field(default_factory=list)
     records: List[RecognitionRecord] = Field(default_factory=list)
     saved_path: Optional[str] = None
+
 
 
 class FieldSchemaInfo(BaseModel):

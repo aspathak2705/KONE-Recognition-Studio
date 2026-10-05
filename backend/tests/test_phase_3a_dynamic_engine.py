@@ -7,6 +7,9 @@ from app.services.pptx_generator import generate_powerpoint_presentation
 from app.services.template_inspector import inspect_powerpoint_template
 
 
+from pptx.util import Inches
+
+
 def create_multi_card_pptx(slots_per_slide: int = 4) -> bytes:
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -14,15 +17,15 @@ def create_multi_card_pptx(slots_per_slide: int = 4) -> bytes:
     # Add text boxes and picture placeholders for N cards
     for i in range(1, slots_per_slide + 1):
         left_offset = (i - 1) * 2.5
-        name_box = slide.shapes.add_textbox(left_offset, 1.0, 2.0, 0.5)
+        name_box = slide.shapes.add_textbox(Inches(left_offset), Inches(1.0), Inches(2.0), Inches(0.5))
         name_box.name = f"Employee_Name_{i}"
         name_box.text_frame.text = f"Sample Name {i}"
         
-        desig_box = slide.shapes.add_textbox(left_offset, 1.6, 2.0, 0.5)
+        desig_box = slide.shapes.add_textbox(Inches(left_offset), Inches(1.6), Inches(2.0), Inches(0.5))
         desig_box.name = f"Designation_{i}"
         desig_box.text_frame.text = f"Sample Role {i}"
 
-        photo_box = slide.shapes.add_textbox(left_offset, 2.2, 2.0, 1.5)
+        photo_box = slide.shapes.add_textbox(Inches(left_offset), Inches(2.2), Inches(2.0), Inches(1.5))
         photo_box.name = f"Photo_Placeholder_{i}"
         photo_box.text_frame.text = "[Insert Photo Here]"
 

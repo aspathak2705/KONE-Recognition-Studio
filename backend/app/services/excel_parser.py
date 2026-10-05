@@ -1,7 +1,8 @@
 import openpyxl
 from io import BytesIO
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from app.schemas.recognition import (
+
     RecognitionRecord,
     ValidationErrorItem,
     ExcelValidationResponse,
@@ -71,7 +72,12 @@ def normalize_header(header_text: str) -> str:
     return cleaned
 
 
-def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidationResponse:
+def parse_and_validate_excel(
+    file_content: bytes,
+    filename: str,
+    required_fields: Optional[List[str]] = None,
+) -> ExcelValidationResponse:
+    target_required = required_fields if required_fields is not None else ["employee_name", "designation", "branch", "award_name"]
     try:
         wb = openpyxl.load_workbook(filename=BytesIO(file_content), data_only=True)
     except Exception as e:
@@ -82,6 +88,7 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
             valid_rows=0,
             invalid_rows=0,
             duplicate_rows=0,
+            detected_columns=[],
             errors=[ValidationErrorItem(row=0, column="file", message=f"Corrupted or invalid Excel file: {str(e)}")],
             records=[],
         )
@@ -95,6 +102,7 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
             valid_rows=0,
             invalid_rows=0,
             duplicate_rows=0,
+            detected_columns=[],
             errors=[ValidationErrorItem(row=0, column="sheet", message="Excel worksheet contains no data.")],
             records=[],
         )
@@ -102,14 +110,17 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
     # Extract headers from row 1
     raw_headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
     col_map: Dict[str, int] = {}  # canonical -> col_index (0-based)
+    detected_cols: List[str] = []
     
     for idx, raw_val in enumerate(raw_headers):
         if raw_val is not None and str(raw_val).strip():
-            normalized = normalize_header(str(raw_val))
-            if normalized in CANONICAL_FIELDS and normalized not in col_map:
+            raw_str = str(raw_val).strip()
+            detected_cols.append(raw_str)
+            normalized = normalize_header(raw_str)
+            if normalized not in col_map:
                 col_map[normalized] = idx
 
-    missing_fields = [f for f in CANONICAL_FIELDS if f not in col_map]
+    missing_fields = [f for f in target_required if f not in col_map]
     if missing_fields:
         return ExcelValidationResponse(
             valid=False,
@@ -118,6 +129,7 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
             valid_rows=0,
             invalid_rows=0,
             duplicate_rows=0,
+            detected_columns=detected_cols,
             errors=[
                 ValidationErrorItem(
                     row=1,
@@ -127,6 +139,7 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
             ],
             records=[],
         )
+
 
     records: List[RecognitionRecord] = []
     errors: List[ValidationErrorItem] = []
@@ -145,14 +158,15 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
         row_errors: List[str] = []
 
         for field in CANONICAL_FIELDS:
-            c_idx = col_map[field]
-            val = row_cells[c_idx].value if c_idx < len(row_cells) else None
+            c_idx = col_map.get(field)
+            val = row_cells[c_idx].value if (c_idx is not None and c_idx < len(row_cells)) else None
             cleaned_val = str(val).strip() if val is not None else ""
 
             if not cleaned_val:
-                msg = f"Required field '{field}' is missing or empty"
-                row_errors.append(msg)
-                errors.append(ValidationErrorItem(row=row_idx, column=field, message=msg))
+                if field in target_required:
+                    msg = f"Required field '{field}' is missing or empty"
+                    row_errors.append(msg)
+                    errors.append(ValidationErrorItem(row=row_idx, column=field, message=msg))
                 row_data[field] = ""
             else:
                 row_data[field] = cleaned_val
@@ -195,6 +209,8 @@ def parse_and_validate_excel(file_content: bytes, filename: str) -> ExcelValidat
         valid_rows=valid_rows,
         invalid_rows=invalid_rows,
         duplicate_rows=duplicate_count,
+        detected_columns=detected_cols,
         errors=errors,
         records=records,
     )
+

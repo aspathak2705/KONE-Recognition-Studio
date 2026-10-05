@@ -5,6 +5,7 @@ from app.schemas.mapping import (
     InspectionStatus,
     MappingStatus,
     GenerationReadiness,
+    TemplateRequirements,
 )
 from app.schemas.template import TemplateInspectionResponse
 
@@ -17,6 +18,7 @@ class TemplateVersion(BaseModel):
     inspection_status: InspectionStatus = InspectionStatus.SUCCESS
     mapping_status: MappingStatus = MappingStatus.NOT_CONFIGURED
     generation_readiness: GenerationReadiness = GenerationReadiness.REQUIRES_MAPPING
+    requirements: Optional[TemplateRequirements] = None
     mapping_config: Optional[FieldMappingConfig] = None
     inspection_data: Optional[TemplateInspectionResponse] = None
     created_at: str
@@ -31,10 +33,14 @@ class TemplateMetadata(BaseModel):
     mapping_status: MappingStatus = MappingStatus.NOT_CONFIGURED
     generation_readiness: GenerationReadiness = GenerationReadiness.REQUIRES_MAPPING
     aspect_ratio: str = "16:9"
+    requirements: Optional[TemplateRequirements] = None
+    supported_capacities: List[int] = Field(default_factory=list)
+    has_photo_support: bool = False
     versions: List[TemplateVersion] = Field(default_factory=list)
     is_archived: bool = False
     created_at: str
     updated_at: str
+
 
 
 class TemplateRegistrationRequest(BaseModel):

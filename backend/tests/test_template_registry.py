@@ -275,4 +275,34 @@ def test_persisted_job_metadata_integrity(tmp_path, monkeypatch):
     assert job_data["status"] == "completed"
 
 
+def test_delete_template_success(tmp_registry):
+    content = create_mock_pptx_bytes("Template To Delete")
+    reg_res = tmp_registry.register_or_update_template(
+        name="Temporary Template",
+        content=content,
+        filename="temp.pptx",
+    )
+    tpl_id = reg_res.template.template_id
+    assert tmp_registry.get_template(tpl_id) is not None
+
+    del_res = tmp_registry.delete_template(tpl_id)
+    assert del_res["success"] is True
+    assert tmp_registry.get_template(tpl_id) is None
+
+
+def test_delete_template_nonexistent(tmp_registry):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_info:
+        tmp_registry.delete_template("f" * 32)
+    assert exc_info.value.status_code == 404
+
+
+def test_delete_template_path_traversal_rejection(tmp_registry):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_info:
+        tmp_registry.delete_template("../../../etc/passwd")
+    assert exc_info.value.status_code == 400
+
+
+
 

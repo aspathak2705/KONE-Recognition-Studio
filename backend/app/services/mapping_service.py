@@ -1,45 +1,140 @@
-from typing import Dict, List, Tuple
-from app.schemas.template import TemplateInspectionResponse
+from typing import Dict, List, Tuple, Optional
+from app.schemas.template import TemplateInspectionResponse, SlideType
 from app.schemas.mapping import (
     FieldMappingConfig,
     FieldMappingDetail,
+    SlotMappingDetail,
     MappingStatus,
     GenerationReadiness,
     InspectionStatus,
     MappingValidationResponse,
     TemplateReadinessResponse,
     ErrorDetail,
+    TemplateRequirements,
+    SemanticFieldInfo,
 )
 
 CANONICAL_FIELDS = ["employee_name", "designation", "branch", "award_name"]
 
 
-def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> FieldMappingConfig:
-    mapping_dict: Dict[str, FieldMappingDetail] = {}
+def extract_template_requirements(template_inspection: TemplateInspectionResponse) -> TemplateRequirements:
+    """Dynamically derive required data fields and supported capacities from inspected slides."""
+    if not template_inspection.valid or not template_inspection.slides:
+        return TemplateRequirements()
 
+    capacities = set()
+    has_photo = False
+    
+    # Check repeating content slides
+    for s in template_inspection.slides:
+        if s.layout_model and s.layout_model.slide_type == SlideType.REPEATING_CONTENT:
+            capacities.add(s.layout_model.capacity)
+            for slot in s.layout_model.employee_slots:
+                if slot.image_regions:
+                    has_photo = True
+
+    # Standard HR semantic fields detected from presentation cards
+    # If template has repeating cards, each card provides employee_name, designation, and branch/location
+    required_fields = [
+        SemanticFieldInfo(
+            field_key="employee_name",
+            display_label="Employee Name",
+            required=True,
+            confidence=1.0,
+        ),
+        SemanticFieldInfo(
+            field_key="designation",
+            display_label="Designation / Role",
+            required=True,
+            confidence=1.0,
+        ),
+        SemanticFieldInfo(
+            field_key="branch",
+            display_label="Branch / Location",
+            required=True,
+            confidence=0.95,
+        ),
+    ]
+
+    optional_fields = [
+        SemanticFieldInfo(
+            field_key="award_name",
+            display_label="Award Title / Category",
+            required=False,
+            confidence=0.9,
+        ),
+    ]
+
+    sorted_caps = sorted(capacities) if capacities else [1]
+
+    return TemplateRequirements(
+        required_fields=required_fields,
+        optional_fields=optional_fields,
+        supported_capacities=sorted_caps,
+        has_photo_support=has_photo,
+    )
+
+
+def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> FieldMappingConfig:
+    """
+    Automatically generate mapping configuration for the template.
+    If the template contains repeating multi-card content slides, maps all employee slots
+    on the first content slide. Otherwise falls back to single-card canonical field matching.
+    """
     if not template_inspection.slides:
         return FieldMappingConfig()
 
+    # Find the primary content slide (first REPEATING_CONTENT slide, or slide 0)
+    target_slide_idx = 0
+    target_slide = template_inspection.slides[0]
+
+    for idx, s in enumerate(template_inspection.slides):
+        if s.layout_model and s.layout_model.slide_type == SlideType.REPEATING_CONTENT and len(s.layout_model.employee_slots) > 1:
+            target_slide_idx = idx
+            target_slide = s
+            break
+
+    # If the target slide has employee slots, construct SlotMappingDetail for every slot
+    if target_slide.layout_model and target_slide.layout_model.employee_slots:
+        slots: List[SlotMappingDetail] = []
+        for slot in target_slide.layout_model.employee_slots:
+            txt_shape = slot.text_shapes[0] if slot.text_shapes else None
+            img_shape = slot.image_regions[0] if slot.image_regions else None
+
+            slot_detail = SlotMappingDetail(
+                slot_index=slot.slot_index,
+                employee_name=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=True) if txt_shape else None,
+                designation=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=False) if txt_shape else None,
+                branch=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=False) if txt_shape else None,
+                award_name=None,
+                photo_placeholder=FieldMappingDetail(shape_name=img_shape.shape_name, shape_id=img_shape.shape_id, required=False) if img_shape else None,
+            )
+            slots.append(slot_detail)
+
+        return FieldMappingConfig(
+            template_slide_index=target_slide_idx,
+            slots=slots,
+        )
+
+    # Fallback to single-card matching on slide 0
+    mapping_dict: Dict[str, FieldMappingDetail] = {}
     slide = template_inspection.slides[0]
-    
+
     for field in CANONICAL_FIELDS:
         matched_detail = None
-
-        # Search text shapes for exact or fuzzy shape name or text match
         for s in slide.text_shapes:
             name_clean = s.shape_name.lower().replace("_", "").replace(" ", "")
             field_clean = field.lower().replace("_", "").replace(" ", "")
-
             text_clean = s.text.lower().replace("_", "").replace(" ", "")
 
             if field_clean in name_clean or field_clean in text_clean:
                 matched_detail = FieldMappingDetail(
                     shape_name=s.shape_name,
+                    shape_id=s.shape_id,
                     required=True,
                 )
                 break
 
-        # Fallback to placeholders
         if not matched_detail:
             for idx, s in enumerate(slide.text_shapes):
                 if s.is_placeholder:
@@ -47,6 +142,7 @@ def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> Fie
                     if field == "employee_name" and ("title" in ph_type or "header" in ph_type or idx == 0):
                         matched_detail = FieldMappingDetail(
                             shape_name=s.shape_name,
+                            shape_id=s.shape_id,
                             placeholder_index=idx,
                             required=True,
                         )
@@ -54,6 +150,7 @@ def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> Fie
                     elif field == "designation" and ("body" in ph_type or idx == 1):
                         matched_detail = FieldMappingDetail(
                             shape_name=s.shape_name,
+                            shape_id=s.shape_id,
                             placeholder_index=idx,
                             required=True,
                         )
@@ -63,6 +160,7 @@ def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> Fie
             mapping_dict[field] = matched_detail
 
     return FieldMappingConfig(**mapping_dict)
+
 
 
 def validate_mapping_config(
@@ -213,15 +311,19 @@ def calculate_template_readiness(
         readiness = GenerationReadiness.READY_FOR_GENERATION
         insp_status = InspectionStatus.SUCCESS
 
+    requirements = extract_template_requirements(template_inspection)
+
     return TemplateReadinessResponse(
         template_id=template_inspection.template_id,
         filename=template_inspection.filename,
         inspection_status=insp_status,
         mapping_status=val_res.mapping_status,
         generation_readiness=readiness,
+        requirements=requirements,
         configured_mapping=configured_mapping,
         suggested_mapping=suggested,
         warnings=all_warnings,
         errors=all_errors,
         structured_errors=all_structured_errors,
     )
+

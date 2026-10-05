@@ -24,6 +24,7 @@ class ImageRegionInfo(BaseModel):
 
 class TextShapeInfo(BaseModel):
     shape_name: str
+    shape_id: Optional[str] = None
     shape_type: str
     text: str
     left_inches: float
@@ -33,6 +34,7 @@ class TextShapeInfo(BaseModel):
     unit: str = "inches"
     is_placeholder: bool = False
     placeholder_type: Optional[str] = None
+
 
 
 class EmployeeSlotInfo(BaseModel):
