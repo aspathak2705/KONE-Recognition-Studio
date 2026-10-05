@@ -4,12 +4,14 @@ import {
   ExcelValidationResponse,
   TemplateMetadata,
   GenerationResponse,
+  FidelityValidationReport,
 } from "../types/recognition";
 import {
   uploadAndValidateExcel,
   fetchRegisteredTemplates,
   generatePresentation,
   getDownloadUrl,
+  fetchGenerationValidation,
 } from "../services/api";
 import {
   FileSpreadsheet,
@@ -22,6 +24,9 @@ import {
   Plus,
   Sparkles,
   Image as ImageIcon,
+  ShieldCheck,
+  ShieldAlert,
+  XCircle,
 } from "lucide-react";
 
 interface CreatePresentationProps {
@@ -43,6 +48,7 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
   // Step 3 & 4: Generation
   const [isGenerating, setIsGenerating] = useState(false);
   const [genResponse, setGenResponse] = useState<GenerationResponse | null>(null);
+  const [validationReport, setValidationReport] = useState<FidelityValidationReport | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -87,6 +93,7 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
 
     setIsGenerating(true);
     setErrorMsg(null);
+    setValidationReport(null);
     try {
       const res = await generatePresentation({
         excel_file_id: excelResult.file_id,
@@ -94,6 +101,12 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
         template_version: selectedTemplate.current_version,
       });
       setGenResponse(res);
+      try {
+        const valReport = await fetchGenerationValidation(res.generation_id);
+        setValidationReport(valReport);
+      } catch {
+        // Fall back to genResponse validation status
+      }
       setStep(4);
     } catch (err: any) {
       setErrorMsg(err.message || "Presentation generation failed.");
@@ -407,31 +420,103 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
       {/* STEP 4: Complete & Download */}
       {step === 4 && genResponse && (
         <div className="rounded-lg border border-border bg-card p-8 text-center space-y-6 shadow-xs">
-          <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
-            <CheckCircle2 className="h-8 w-8" />
-          </div>
+          {genResponse.validation_status === "VERIFIED" ? (
+            <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
+              <ShieldCheck className="h-8 w-8" />
+            </div>
+          ) : (
+            <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
+              <ShieldAlert className="h-8 w-8" />
+            </div>
+          )}
 
           <div>
-            <h3 className="text-xl font-bold text-foreground">Presentation Generated Successfully</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Generated PowerPoint presentation containing {genResponse.slide_count} slides for {genResponse.record_count} recognition records.
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <h3 className="text-xl font-bold text-foreground">
+                {genResponse.validation_status === "VERIFIED"
+                  ? "Presentation Verified & Ready for Download"
+                  : "Presentation Fidelity Verification Blocked"}
+              </h3>
+              <span
+                className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider ${
+                  genResponse.validation_status === "VERIFIED"
+                    ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                    : "bg-rose-500/10 text-rose-600 border border-rose-500/20"
+                }`}
+              >
+                {genResponse.validation_status || "VERIFIED"}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 max-w-lg mx-auto">
+              {genResponse.validation_status === "VERIFIED"
+                ? `Generated PowerPoint presentation verified against master template fidelity manifest (${genResponse.slide_count} slides for ${genResponse.record_count} recognition records).`
+                : "Post-generation verification failed template fidelity checks. Download is blocked to protect slide presentation quality."}
             </p>
           </div>
 
+          {/* Verification Diagnostics Box */}
+          {validationReport && (
+            <div className="rounded-md border border-border bg-muted/40 p-4 text-left max-w-xl mx-auto space-y-3">
+              <div className="flex items-center justify-between text-xs font-semibold text-foreground border-b border-border/50 pb-2">
+                <span>Fidelity Verification Score</span>
+                <span
+                  className={
+                    validationReport.verification_status === "VERIFIED"
+                      ? "text-emerald-600 font-bold"
+                      : "text-rose-600 font-bold"
+                  }
+                >
+                  {Math.round(validationReport.overall_score * 100)}% ({validationReport.slides_passed}/{validationReport.slides_checked} slides passed)
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                <div>Structure: <span className="font-medium text-foreground">{validationReport.structural_result}</span></div>
+                <div>Geometry: <span className="font-medium text-foreground">{validationReport.geometry_result}</span></div>
+                <div>Static Assets: <span className="font-medium text-foreground">{validationReport.static_asset_result}</span></div>
+                <div>Semantics: <span className="font-medium text-foreground">{validationReport.semantic_result}</span></div>
+                <div>Photo Slots: <span className="font-medium text-foreground">{validationReport.photo_slot_result}</span></div>
+                <div>Visual Similarity: <span className="font-medium text-foreground">{validationReport.visual_result}</span></div>
+              </div>
+
+              {validationReport.failures && validationReport.failures.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+                  <div className="text-[11px] font-semibold text-rose-600">Verification Issues Detected:</div>
+                  {validationReport.failures.slice(0, 3).map((f, idx) => (
+                    <div key={idx} className="text-[11px] text-rose-500/90 flex items-start gap-1.5">
+                      <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>Slide {f.slide_number}: {f.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="pt-2 flex justify-center gap-4">
-            <a
-              href={getDownloadUrl(genResponse.generation_id)}
-              download
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
-            >
-              <Download className="h-4 w-4" /> Download Presentation (.pptx)
-            </a>
+            {genResponse.validation_status === "VERIFIED" ? (
+              <a
+                href={getDownloadUrl(genResponse.generation_id)}
+                download
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
+              >
+                <Download className="h-4 w-4" /> Download Presentation (.pptx)
+              </a>
+            ) : (
+              <button
+                disabled
+                className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
+                title="Download blocked due to fidelity verification failures"
+              >
+                <Download className="h-4 w-4" /> Download Blocked (Failed Fidelity)
+              </button>
+            )}
 
             <button
               onClick={() => {
                 setStep(1);
                 setExcelResult(null);
                 setGenResponse(null);
+                setValidationReport(null);
               }}
               className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
             >

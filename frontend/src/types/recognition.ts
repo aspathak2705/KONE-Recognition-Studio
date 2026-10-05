@@ -115,14 +115,60 @@ export interface GenerationRequest {
   mapping_config?: FieldMappingConfig;
 }
 
+export interface ValidationFailureDetail {
+  slide_number: number;
+  region: string;
+  failure_type: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  expected: string;
+  actual: string;
+  message: string;
+}
+
+export interface SlideValidationResult {
+  slide_number: number;
+  source_layout_variant_id: string;
+  passed: boolean;
+  structural_score: number;
+  geometry_score: number;
+  static_asset_score: number;
+  semantic_score: number;
+  photo_slot_score: number;
+  visual_score: number;
+  failures: ValidationFailureDetail[];
+  warnings: string[];
+}
+
+export interface FidelityValidationReport {
+  generation_id: string;
+  verification_status: "VERIFIED" | "BLOCKED";
+  overall_score: number;
+  slides_checked: number;
+  slides_passed: number;
+  slides_failed: number;
+  structural_result: string;
+  geometry_result: string;
+  static_asset_result: string;
+  semantic_result: string;
+  photo_slot_result: string;
+  visual_result: string;
+  failures: ValidationFailureDetail[];
+  warnings: string[];
+  slide_reports: SlideValidationResult[];
+}
+
 export interface GenerationResponse {
   generation_id: string;
   source_template_file_id: string;
+  template_version?: number;
+  template_file_hash?: string;
   source_excel_file_id: string;
   generated_file_id: string;
   record_count: number;
   slide_count: number;
   status: string;
+  validation_status?: "VERIFIED" | "BLOCKED";
+  validation_score?: number;
   warnings: string[];
   download_url: string;
 }

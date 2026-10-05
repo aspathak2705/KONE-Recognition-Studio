@@ -1,7 +1,7 @@
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 

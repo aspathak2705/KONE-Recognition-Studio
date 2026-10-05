@@ -3,7 +3,7 @@ from app.schemas.mapping import FieldMappingConfig, FieldMappingDetail, SlotMapp
 from app.services.template_registry_service import template_registry
 from app.services.mapping_service import validate_mapping_config, calculate_template_readiness
 
-NJ_TEMPLATE_ID = "2f967d49d08f433ea078dbaa3732f7f7"
+NJ_TEMPLATE_ID = "c9907b8914d0441791b120bd9624c880"
 
 
 def test_original_bug_multi_card_mapping_validation_and_readiness_convergence():

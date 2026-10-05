@@ -123,21 +123,73 @@ def generate_presentation_endpoint(req: GenerationRequest):
             source_excel_file_id=req.excel_file_id,
             source_template_file_id=req.template_file_id,
         )
+
+        # Retrieve version-specific fidelity manifest for post-generation validation
+        manifest = None
         if registered_meta:
             gen_res.template_version = active_version.version_number
             gen_res.template_file_hash = active_version.file_hash
+            manifest = template_registry.get_template_fidelity_manifest(
+                req.template_file_id, active_version.version_number
+            )
+        else:
+            # If not registered, generate manifest on the fly from source PPTX
+            from app.services.manifest_service import generate_fidelity_manifest
+            import hashlib
+            source_hash = hashlib.sha256(tpl_content).hexdigest()
+            manifest = generate_fidelity_manifest(tpl_inspection, source_hash, 1, tpl_content)
 
-            # Update persisted job metadata JSON file
-            job_meta_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}.json"
-            import json
-            with open(job_meta_path, "w", encoding="utf-8") as f:
-                json.dump(gen_res.dict(), f, indent=2)
+        # Run TemplateFidelityValidator
+        gen_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}.pptx"
+        with open(gen_path, "rb") as f:
+            generated_bytes = f.read()
+
+        from app.services.template_fidelity_validator import TemplateFidelityValidator
+        validation_report = TemplateFidelityValidator.validate_presentation(
+            generated_pptx_bytes=generated_bytes,
+            manifest=manifest,
+            expected_records_count=len(excel_res.records),
+        )
+        validation_report.generation_id = gen_res.generation_id
+
+        # Update GenerationResponse with validation results
+        gen_res.validation_status = validation_report.verification_status.value
+        gen_res.validation_score = validation_report.overall_score
+
+        # Persist full validation report JSON and updated generation job metadata
+        import json
+        val_report_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}_validation.json"
+        with open(val_report_path, "w", encoding="utf-8") as f:
+            json.dump(validation_report.dict(), f, indent=2)
+
+        job_meta_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}.json"
+        with open(job_meta_path, "w", encoding="utf-8") as f:
+            json.dump(gen_res.dict(), f, indent=2)
 
         return gen_res
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Presentation generation failed: {str(e)}")
+
+
+@router.get("/api/generations/{generation_id}/validation")
+def get_generation_validation(generation_id: str):
+    if not generation_id or not HEX_ID_PATTERN.match(generation_id):
+        raise HTTPException(status_code=400, detail="Invalid generation identifier format: Expected 32-character hex ID.")
+
+    gen_dir = settings.GENERATED_OUTPUTS_DIR.resolve()
+    val_report_path = (gen_dir / f"{generation_id}_validation.json").resolve()
+
+    if not str(val_report_path).startswith(str(gen_dir)):
+        raise HTTPException(status_code=400, detail="Access denied: invalid file path.")
+
+    if not val_report_path.exists():
+        raise HTTPException(status_code=404, detail="Validation report not found for this generation.")
+
+    import json
+    with open(val_report_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 @router.get("/api/generations/{generation_id}/download")
@@ -147,12 +199,38 @@ def download_generated_presentation(generation_id: str):
 
     gen_dir = settings.GENERATED_OUTPUTS_DIR.resolve()
     gen_path = (gen_dir / f"{generation_id}.pptx").resolve()
+    job_meta_path = (gen_dir / f"{generation_id}.json").resolve()
     
     if not str(gen_path).startswith(str(gen_dir)):
         raise HTTPException(status_code=400, detail="Access denied: invalid file path.")
 
     if not gen_path.exists():
         raise HTTPException(status_code=404, detail="Generated presentation file not found.")
+
+    # Enforce validation gate: must be COMPLETED and VERIFIED
+    if job_meta_path.exists():
+        import json
+        with open(job_meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+            status = meta.get("status")
+            val_status = meta.get("validation_status")
+            if status != "completed" or val_status != "VERIFIED":
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "PRESENTATION_NOT_VERIFIED",
+                        "message": f"This presentation has not passed template fidelity verification. Current state: '{val_status or 'UNVERIFIED'}'.",
+                    },
+                )
+    else:
+        # Fail closed: reject download if generation metadata missing
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "PRESENTATION_NOT_VERIFIED",
+                "message": "Presentation verification metadata missing. Download blocked.",
+            },
+        )
 
     return FileResponse(
         path=gen_path,

@@ -9,6 +9,7 @@ import {
   GenerationResponse,
   TemplateMetadata,
   TemplateRegistrationResponse,
+  FidelityValidationReport,
 } from "../types/recognition";
 
 const API_BASE_URL = "http://127.0.0.1:8000";
@@ -180,5 +181,14 @@ export async function deleteTemplate(templateId: string): Promise<{ success: boo
 
 export function getDownloadUrl(generationId: string): string {
   return `${API_BASE_URL}/api/generations/${generationId}/download`;
+}
+
+export async function fetchGenerationValidation(generationId: string): Promise<FidelityValidationReport> {
+  const res = await fetch(`${API_BASE_URL}/api/generations/${generationId}/validation`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Failed to fetch validation report.");
+  }
+  return res.json();
 }
 
