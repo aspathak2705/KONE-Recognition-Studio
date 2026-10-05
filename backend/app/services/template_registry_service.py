@@ -152,6 +152,13 @@ class TemplateRegistryService:
             with open(tpl_dir / f"mapping_v{new_v_number}.json", "w", encoding="utf-8") as f:
                 json.dump(suggested.dict(), f, indent=2)
 
+            # Generate fidelity manifest
+            from app.services.manifest_service import generate_fidelity_manifest
+            manifest = generate_fidelity_manifest(inspection, file_hash, new_v_number, content)
+            manifest_filename = f"manifest_v{new_v_number}.json"
+            with open(tpl_dir / manifest_filename, "w", encoding="utf-8") as f:
+                json.dump(manifest.dict(), f, indent=2)
+
             new_version = TemplateVersion(
                 version_number=new_v_number,
                 file_hash=file_hash,
@@ -163,6 +170,7 @@ class TemplateRegistryService:
                 requirements=readiness.requirements,
                 mapping_config=suggested,
                 inspection_data=inspection,
+                manifest_rel_path=manifest_filename,
                 created_at=now_str,
             )
 
@@ -207,8 +215,12 @@ class TemplateRegistryService:
         with open(tpl_dir / "inspection_v1.json", "w", encoding="utf-8") as f:
             json.dump(inspection.dict(), f, indent=2)
 
-        with open(tpl_dir / "mapping_v1.json", "w", encoding="utf-8") as f:
-            json.dump(suggested.dict(), f, indent=2)
+        # Generate fidelity manifest
+        from app.services.manifest_service import generate_fidelity_manifest
+        manifest = generate_fidelity_manifest(inspection, file_hash, 1, content)
+        manifest_filename = "manifest_v1.json"
+        with open(tpl_dir / manifest_filename, "w", encoding="utf-8") as f:
+            json.dump(manifest.dict(), f, indent=2)
 
         v1 = TemplateVersion(
             version_number=1,
@@ -221,6 +233,7 @@ class TemplateRegistryService:
             requirements=readiness.requirements,
             mapping_config=suggested,
             inspection_data=inspection,
+            manifest_rel_path=manifest_filename,
             created_at=now_str,
         )
 
@@ -361,6 +374,23 @@ class TemplateRegistryService:
             content = f.read()
 
         return content, version_obj
+
+    def get_template_fidelity_manifest(self, template_id: str, version_number: Optional[int] = None):
+        meta = self.get_template(template_id)
+        if not meta:
+            return None
+        target_v_num = version_number or meta.current_version
+        version_obj = next((v for v in meta.versions if v.version_number == target_v_num), None)
+        if not version_obj or not version_obj.manifest_rel_path:
+            return None
+        tpl_dir = self._get_template_dir(template_id)
+        m_path = tpl_dir / version_obj.manifest_rel_path
+        if not m_path.exists():
+            return None
+        import json
+        from app.schemas.fidelity import TemplateFidelityManifest
+        with open(m_path, "r", encoding="utf-8") as f:
+            return TemplateFidelityManifest(**json.load(f))
 
 
 template_registry = TemplateRegistryService()

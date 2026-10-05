@@ -21,6 +21,7 @@ class TemplateVersion(BaseModel):
     requirements: Optional[TemplateRequirements] = None
     mapping_config: Optional[FieldMappingConfig] = None
     inspection_data: Optional[TemplateInspectionResponse] = None
+    manifest_rel_path: Optional[str] = None
     created_at: str
 
 

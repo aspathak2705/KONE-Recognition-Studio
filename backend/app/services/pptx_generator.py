@@ -12,41 +12,30 @@ from app.services.template_inspector import inspect_powerpoint_template
 from app.core.config import settings
 
 
+import copy
+from PIL import Image
+
 def copy_slide_elements(source_slide, target_slide):
-    """Deep clone shapes from source slide to target slide preserving position and formatting."""
-    for shape in source_slide.shapes:
-        if shape.has_text_frame:
-            # Create matching text box
-            new_shape = target_slide.shapes.add_textbox(
-                shape.left, shape.top, shape.width, shape.height
-            )
-            new_shape.name = shape.name
-            tf = new_shape.text_frame
-            tf.word_wrap = shape.text_frame.word_wrap
+    """Deep clone native shapes from source slide to target slide, preserving relationships, pictures, vector paths, formatting."""
+    # Remove any default shapes in target_slide
+    for shp in list(target_slide.shapes):
+        sp = shp._element
+        sp.getparent().remove(sp)
 
-            for p_idx, p in enumerate(shape.text_frame.paragraphs):
-                if p_idx == 0:
-                    new_p = tf.paragraphs[0]
-                else:
-                    new_p = tf.add_paragraph()
-                
-                new_p.alignment = p.alignment
-                for r in p.runs:
-                    new_r = new_p.add_run()
-                    new_r.text = r.text
-                    if r.font.name:
-                        new_r.font.name = r.font.name
-                    if r.font.size:
-                        new_r.font.size = r.font.size
-                    if r.font.bold is not None:
-                        new_r.font.bold = r.font.bold
-                    if r.font.italic is not None:
-                        new_r.font.italic = r.font.italic
-                    if r.font.color and hasattr(r.font.color, "rgb") and r.font.color.rgb:
-                        new_r.font.color.rgb = r.font.color.rgb
+    for shp in source_slide.shapes:
+        elem = copy.deepcopy(shp._element)
+        if shp.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            blips = elem.xpath('.//a:blip')
+            if blips:
+                old_rid = blips[0].get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                if old_rid and old_rid in source_slide.part.rels:
+                    rel = source_slide.part.rels[old_rid]
+                    new_rid = target_slide.part.relate_to(rel.target_part, rel.reltype)
+                    blips[0].set('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed', new_rid)
+        target_slide.shapes._spTree.append(elem)
 
 
-def substitute_text_in_shape(shape, new_text: str) -> bool:
+def substitute_text_in_shape(shape, new_text: str, card_data: Optional[Dict[str, str]] = None) -> bool:
     if not shape.has_text_frame:
         return False
 
@@ -56,7 +45,35 @@ def substitute_text_in_shape(shape, new_text: str) -> bool:
         p.text = new_text
         return True
 
-    # Preserve formatting of first run
+    # Check if shape is a multi-line card containing separate paragraphs for name, designation, branch
+    if card_data and len(tf.paragraphs) >= 2:
+        field_order = ["employee_name", "designation", "branch", "award_name"]
+        for p_idx, p in enumerate(tf.paragraphs):
+            if p_idx < len(field_order):
+                f_key = field_order[p_idx]
+                line_val = card_data.get(f_key, "")
+                if p.runs:
+                    font_name = p.runs[0].font.name
+                    font_size = p.runs[0].font.size
+                    font_bold = p.runs[0].font.bold
+                    font_italic = p.runs[0].font.italic
+                    font_color = p.runs[0].font.color.rgb if (p.runs[0].font.color and hasattr(p.runs[0].font.color, "rgb")) else None
+                    alignment = p.alignment
+
+                    p.text = line_val
+                    if p.runs:
+                        r = p.runs[0]
+                        if font_name: r.font.name = font_name
+                        if font_size: r.font.size = font_size
+                        if font_bold is not None: r.font.bold = font_bold
+                        if font_italic is not None: r.font.italic = font_italic
+                        if font_color: r.font.color.rgb = font_color
+                        p.alignment = alignment
+                else:
+                    p.text = line_val
+        return True
+
+    # Standard single-field substitution: Preserve formatting of first run
     first_p = tf.paragraphs[0]
     if first_p.runs:
         font_name = first_p.runs[0].font.name
@@ -103,17 +120,37 @@ def find_shape_by_name(shapes, shape_name: str):
     return None
 
 
-def clear_shape_content(shape):
-    """Clear text or remove picture shape without deleting non-photo elements."""
+def clear_sample_photo(shape, slide):
+    """Clear sample photo content while strictly preserving the photo slot geometry and frame."""
+    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+        blips = shape._element.xpath('.//a:blip')
+        if blips:
+            rId = blips[0].get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+            if rId and rId in slide.part.rels:
+                try:
+                    part = slide.part.related_part(rId)
+                    # Replace with neutral 1x1 blank image bytes
+                    blank = Image.new('RGB', (100, 100), (248, 248, 248))
+                    bio = BytesIO()
+                    blank.save(bio, format='PNG')
+                    part._blob = bio.getvalue()
+                except Exception:
+                    pass
+
+
+def clear_shape_content(shape, slide=None):
+    """Clear text or photo placeholder content while retaining frames and geometry."""
     if shape.has_text_frame:
         shape.text_frame.text = ""
-    elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE or (hasattr(shape, "is_placeholder") and shape.is_placeholder and str(shape.placeholder_format.type) == "PICTURE (18)"):
-        # Remove placeholder picture shape element safely from slide if permitted
-        try:
-            sp = shape._element
-            sp.getparent().remove(sp)
-        except Exception:
-            pass
+    elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+        if slide:
+            clear_sample_photo(shape, slide)
+        else:
+            try:
+                sp = shape._element
+                sp.getparent().remove(sp)
+            except Exception:
+                pass
 
 
 def generate_powerpoint_presentation(
