@@ -167,6 +167,17 @@ export async function archiveTemplate(templateId: string): Promise<TemplateMetad
   return res.json();
 }
 
+export async function deleteTemplate(templateId: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/templates/${templateId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail || "Failed to delete template.");
+  }
+  return res.json();
+}
+
 export function getDownloadUrl(generationId: string): string {
   return `${API_BASE_URL}/api/generations/${generationId}/download`;
 }

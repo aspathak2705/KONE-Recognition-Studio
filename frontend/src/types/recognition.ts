@@ -22,6 +22,7 @@ export interface ExcelValidationResponse {
   valid_rows: number;
   invalid_rows: number;
   duplicate_rows: number;
+  detected_columns?: string[];
   errors: ValidationErrorItem[];
   records: RecognitionRecord[];
   saved_path?: string;
@@ -126,6 +127,20 @@ export interface GenerationResponse {
   download_url: string;
 }
 
+export interface SemanticFieldInfo {
+  field_key: string;
+  display_label: string;
+  required: boolean;
+  confidence: number;
+}
+
+export interface TemplateRequirements {
+  required_fields: SemanticFieldInfo[];
+  optional_fields: SemanticFieldInfo[];
+  supported_capacities: number[];
+  has_photo_support: boolean;
+}
+
 export interface TemplateVersion {
   version_number: number;
   file_hash: string;
@@ -136,6 +151,9 @@ export interface TemplateVersion {
   generation_readiness: "requires_template" | "requires_mapping" | "blocked_by_validation" | "ready_for_generation";
   mapping_config?: FieldMappingConfig;
   inspection_data?: TemplateInspectionResponse;
+  requirements?: TemplateRequirements;
+  supported_capacities?: number[];
+  has_photo_support?: boolean;
   created_at: string;
 }
 
@@ -148,6 +166,9 @@ export interface TemplateMetadata {
   mapping_status: "not_configured" | "partially_configured" | "valid" | "invalid";
   generation_readiness: "requires_template" | "requires_mapping" | "blocked_by_validation" | "ready_for_generation";
   aspect_ratio: string;
+  requirements?: TemplateRequirements;
+  supported_capacities?: number[];
+  has_photo_support?: boolean;
   versions: TemplateVersion[];
   is_archived: boolean;
   created_at: string;
