@@ -29,3 +29,4 @@ dist/
 *.sqlite3
 autohr.db
 storage/
+scratch
