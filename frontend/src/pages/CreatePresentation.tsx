@@ -136,6 +136,12 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
         return "An employee card or shape was displaced beyond acceptable layout boundaries.";
       case "SEMANTIC_PLACEMENT_ERROR":
         return "Some employee information was placed in the wrong card field.";
+      case "DIMENSION_MISMATCH":
+        return "Presentation slide dimensions differ from master template specifications.";
+      case "BLANK_RENDERED_SLIDE":
+        return "One or more slides rendered blank despite containing employee cards.";
+      case "RENDERED_SLIDE_UNREADABLE":
+        return "One or more slides could not be rendered as readable PowerPoint slides.";
       default:
         return msg || "The generated presentation differs from the selected template.";
     }
@@ -721,41 +727,56 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
               )}
 
               {/* Action Buttons: Gated Download */}
-              <div className="pt-4 flex justify-center gap-4 border-t border-border">
-                {(genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || (!genResponse.delivery_status && genResponse.validation_status === "VERIFIED")) ? (
-                  <a
-                    href={getDownloadUrl(genResponse.generation_id)}
-                    download
-                    className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
-                  >
-                    <Download className="h-4 w-4" /> Download Presentation (.pptx)
-                  </a>
-                ) : (
-                  <button
-                    disabled
-                    className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
-                    title={
-                      genResponse.delivery_status === "REPAIR_PENDING"
-                        ? "Download pending: issue resolution required"
-                        : "Download blocked: critical fidelity defect detected"
-                    }
-                  >
-                    <Download className="h-4 w-4" /> Download Blocked
-                  </button>
-                )}
+              <div className="pt-4 flex flex-col items-center gap-4 border-t border-border">
+                <div className="flex justify-center gap-4 w-full">
+                  {(genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || (!genResponse.delivery_status && genResponse.validation_status === "VERIFIED")) ? (
+                    <a
+                      href={getDownloadUrl(genResponse.generation_id)}
+                      download
+                      className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
+                    >
+                      <Download className="h-4 w-4" /> Download Presentation (.pptx)
+                    </a>
+                  ) : (
+                    <button
+                      disabled
+                      className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
+                      title={
+                        genResponse.delivery_status === "REPAIR_PENDING"
+                          ? "Download pending: issue resolution required"
+                          : "Download blocked: critical fidelity defect detected"
+                      }
+                    >
+                      <Download className="h-4 w-4" /> Download Blocked
+                    </button>
+                  )}
 
-                <button
-                  onClick={() => {
-                    setStep(1);
-                    setExcelResult(null);
-                    setGenResponse(null);
-                    setValidationReport(null);
-                    setGenerationStage("IDLE");
-                  }}
-                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
-                >
-                  Create Another Presentation
-                </button>
+                  <button
+                    onClick={() => {
+                      setStep(1);
+                      setExcelResult(null);
+                      setGenResponse(null);
+                      setValidationReport(null);
+                      setGenerationStage("IDLE");
+                    }}
+                    className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
+                  >
+                    Create Another Presentation
+                  </button>
+                </div>
+
+                {/* Step 7: Post-download manual portrait insertion guidance */}
+                {(genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || (!genResponse.delivery_status && genResponse.validation_status === "VERIFIED")) && (
+                  <div className="flex items-center gap-2.5 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs max-w-xl text-left">
+                    <ImageIcon className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Next Step: Add Employee Portraits in PowerPoint</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Open the downloaded presentation in Microsoft PowerPoint. Photo frames are preserved across all slides so you can easily paste or insert each employee's photo directly.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
