@@ -29,6 +29,10 @@ dist/
 *.sqlite3
 autohr.db
 storage/
-scratch
-backend\tests
+scratch/
+backend/tests/
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
 

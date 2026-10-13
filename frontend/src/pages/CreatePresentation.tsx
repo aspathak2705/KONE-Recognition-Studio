@@ -541,6 +541,12 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
                           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
                           <span>Photo regions preserved for manual portrait placement</span>
                         </div>
+                        {validationReport?.repair_record?.outcome === "SUCCESS" && (
+                          <div className="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-400 pt-1 border-t border-emerald-500/10">
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" />
+                            <span>Automatically repaired minor layout alignment & re-verified</span>
+                          </div>
+                        )}
                       </div>
                     </>
                   );

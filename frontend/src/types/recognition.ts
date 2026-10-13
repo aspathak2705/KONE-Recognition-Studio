@@ -148,6 +148,16 @@ export interface DeliveryDecision {
   decision_timestamp?: string;
 }
 
+export interface RepairRecord {
+  attempt_count: number;
+  strategy_used?: string;
+  finding_types_addressed: string[];
+  outcome: "SUCCESS" | "FAILED" | "NOT_ATTEMPTED" | "UNSUPPORTED";
+  details: string;
+  repaired_timestamp?: string;
+  post_repair_verified: boolean;
+}
+
 export interface FidelityValidationReport {
   generation_id: string;
   verification_status: "VERIFIED" | "BLOCKED";
@@ -168,6 +178,8 @@ export interface FidelityValidationReport {
   failures: ValidationFailureDetail[];
   warnings: string[];
   slide_reports: SlideValidationResult[];
+  repair_record?: RepairRecord;
+  pre_repair_failures?: ValidationFailureDetail[];
 }
 
 export interface GenerationResponse {

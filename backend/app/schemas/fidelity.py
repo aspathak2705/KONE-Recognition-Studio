@@ -117,6 +117,23 @@ class DeliveryDecision(BaseModel):
     decision_timestamp: Optional[str] = None
 
 
+class RepairOutcome(str, Enum):
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    NOT_ATTEMPTED = "NOT_ATTEMPTED"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class RepairRecord(BaseModel):
+    attempt_count: int = 0
+    strategy_used: Optional[str] = None
+    finding_types_addressed: List[str] = Field(default_factory=list)
+    outcome: RepairOutcome = RepairOutcome.NOT_ATTEMPTED
+    details: str = ""
+    repaired_timestamp: Optional[str] = None
+    post_repair_verified: bool = False
+
+
 class FidelityValidationReport(BaseModel):
     generation_id: str
     verification_status: VerificationStatus  # VERIFIED or BLOCKED (backwards compatible)
@@ -137,4 +154,6 @@ class FidelityValidationReport(BaseModel):
     failures: List[ValidationFailureDetail] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     slide_reports: List[SlideValidationResult] = Field(default_factory=list)
+    repair_record: Optional[RepairRecord] = None
+    pre_repair_failures: List[ValidationFailureDetail] = Field(default_factory=list)
 

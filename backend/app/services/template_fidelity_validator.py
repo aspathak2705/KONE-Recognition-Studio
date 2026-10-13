@@ -228,14 +228,19 @@ class TemplateFidelityValidator:
         repairable_count = len([f for f in deduped_failures if f.is_repairable and f.severity in (FailureSeverity.CRITICAL, FailureSeverity.HIGH)])
 
         # Quality Classification
-        if critical_count > 0:
-            quality_class = QualityClassification.CRITICAL
-            delivery_st = DeliveryStatus.BLOCKED
-            ver_status = VerificationStatus.BLOCKED
-        elif high_count > 0:
-            quality_class = QualityClassification.REPAIRABLE if repairable_count > 0 else QualityClassification.CRITICAL
-            delivery_st = DeliveryStatus.REPAIR_PENDING if repairable_count > 0 else DeliveryStatus.BLOCKED
-            ver_status = VerificationStatus.BLOCKED
+        # If all critical/high failures are marked is_repairable, classify as REPAIRABLE -> triggers bounded repair pipeline
+        has_unrepairable = any(not f.is_repairable for f in deduped_failures if f.severity in (FailureSeverity.CRITICAL, FailureSeverity.HIGH))
+        has_defects = (critical_count + high_count) > 0
+
+        if has_defects:
+            if not has_unrepairable and repairable_count > 0:
+                quality_class = QualityClassification.REPAIRABLE
+                delivery_st = DeliveryStatus.REPAIR_PENDING
+                ver_status = VerificationStatus.BLOCKED
+            else:
+                quality_class = QualityClassification.CRITICAL
+                delivery_st = DeliveryStatus.BLOCKED
+                ver_status = VerificationStatus.BLOCKED
         elif len(all_warnings) > 0:
             quality_class = QualityClassification.WARNING
             delivery_st = DeliveryStatus.READY_WITH_WARNING

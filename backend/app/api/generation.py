@@ -139,12 +139,15 @@ def generate_presentation_endpoint(req: GenerationRequest):
             source_hash = hashlib.sha256(tpl_content).hexdigest()
             manifest = generate_fidelity_manifest(tpl_inspection, source_hash, 1, tpl_content)
 
-        # Run TemplateFidelityValidator
+        # Run TemplateFidelityValidator (Initial verification)
         gen_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}.pptx"
         with open(gen_path, "rb") as f:
             generated_bytes = f.read()
 
         from app.services.template_fidelity_validator import TemplateFidelityValidator
+        from app.services.presentation_repair_service import PresentationRepairService
+        from app.schemas.fidelity import QualityClassification
+
         validation_report = TemplateFidelityValidator.validate_presentation(
             generated_pptx_bytes=generated_bytes,
             manifest=manifest,
@@ -152,7 +155,40 @@ def generate_presentation_endpoint(req: GenerationRequest):
         )
         validation_report.generation_id = gen_res.generation_id
 
-        # Update GenerationResponse with validation and delivery results
+        # Phase 3F-2: Bounded automatic repair pipeline (at most 1 attempt)
+        if (
+            validation_report.quality_classification == QualityClassification.REPAIRABLE
+            and PresentationRepairService.can_attempt_repair(validation_report.failures, current_attempt_count=0)
+        ):
+            pre_repair_failures = list(validation_report.failures)
+            repaired_bytes, repair_record = PresentationRepairService.repair_presentation(
+                generated_pptx_bytes=generated_bytes,
+                source_template_bytes=tpl_content,
+                manifest=manifest,
+                failures=validation_report.failures,
+            )
+
+            if repair_record.outcome.value == "SUCCESS":
+                # Atomically overwrite generated PPTX with repaired artifact
+                with open(gen_path, "wb") as f:
+                    f.write(repaired_bytes)
+                generated_bytes = repaired_bytes
+
+                # Execute single post-repair re-verification pass
+                post_val_report = TemplateFidelityValidator.validate_presentation(
+                    generated_pptx_bytes=generated_bytes,
+                    manifest=manifest,
+                    expected_records_count=len(excel_res.records),
+                )
+                post_val_report.generation_id = gen_res.generation_id
+                repair_record.post_repair_verified = True
+                post_val_report.repair_record = repair_record
+                post_val_report.pre_repair_failures = pre_repair_failures
+                validation_report = post_val_report
+            else:
+                validation_report.repair_record = repair_record
+
+        # Update GenerationResponse with final validation and delivery results
         gen_res.validation_status = validation_report.verification_status.value
         gen_res.validation_score = validation_report.overall_score
         gen_res.delivery_status = validation_report.delivery_status.value
