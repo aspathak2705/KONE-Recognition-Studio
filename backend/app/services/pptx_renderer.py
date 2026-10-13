@@ -110,21 +110,9 @@ class PptxRenderer:
                 except Exception:
                     pass
 
-        # Headless fallback renderer: produces deterministic placeholder canvas if PowerPoint COM not used
-        try:
-            from pptx import Presentation
-            prs = Presentation(pptx_path)
-            for i in range(1, len(prs.slides) + 1):
-                out_png = output_dir / f"slide_{i}.png"
-                if out_png.exists():
-                    out_png.unlink()
-                img = Image.new("RGB", (width, height), (250, 250, 250))
-                img.save(out_png, "PNG")
-                rendered_paths.append(out_png)
-            return rendered_paths
-        except Exception as e:
-            logger.warning(f"Fallback renderer failed: {e}")
-            return []
+        # Headless fallback / renderer unavailable: return empty list and report honestly
+        logger.info(f"Visual rendering comparison unavailable for {pptx_path.name}")
+        return []
 
     @staticmethod
     def inspect_rendered_slide(img_path: Path) -> Dict[str, Any]:

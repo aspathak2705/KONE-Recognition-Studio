@@ -229,7 +229,10 @@ class PresentationRepairService:
                 old_rid = blips[0].get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
                 if old_rid and old_rid in src_slide.part.rels:
                     rel = src_slide.part.rels[old_rid]
-                    new_rid = gen_slide.part.relate_to(rel.target_part, rel.reltype)
+                    # Import media blob into target package rather than binding foreign package part
+                    src_blob = rel.target_part._blob
+                    target_img_part = gen_slide.part.package.get_or_add_image_part(io.BytesIO(src_blob))
+                    new_rid = gen_slide.part.relate_to(target_img_part, rel.reltype)
                     blips[0].set('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed', new_rid)
 
         gen_slide.shapes._spTree.append(elem)

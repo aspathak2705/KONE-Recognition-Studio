@@ -282,7 +282,7 @@ def generate_powerpoint_presentation(
                         if slot_mapping.photo_placeholder and slot_mapping.photo_placeholder.shape_name:
                             p_shape = find_shape_by_name(current_slide.shapes, slot_mapping.photo_placeholder.shape_name)
                             if p_shape:
-                                clear_shape_content(p_shape)
+                                clear_shape_content(p_shape, slide=current_slide)
                 else:
                     # Unfilled card slot on last slide: clear text shapes and sample photo placeholders
                     if slot_mapping:
@@ -297,7 +297,7 @@ def generate_powerpoint_presentation(
                             if s_name:
                                 shape = find_shape_by_name(current_slide.shapes, s_name)
                                 if shape:
-                                    clear_shape_content(shape)
+                                    clear_shape_content(shape, slide=current_slide)
     else:
         # Legacy single-card mode (1 record per slide)
         field_map = {
