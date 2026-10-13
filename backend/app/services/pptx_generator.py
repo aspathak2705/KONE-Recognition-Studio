@@ -35,7 +35,12 @@ def copy_slide_elements(source_slide, target_slide):
         target_slide.shapes._spTree.append(elem)
 
 
-def substitute_text_in_shape(shape, new_text: str, card_data: Optional[Dict[str, str]] = None) -> bool:
+def substitute_text_in_shape(
+    shape,
+    new_text: str = "",
+    card_data: Optional[Dict[str, str]] = None,
+    line_mappings: Optional[Dict[int, str]] = None,
+) -> bool:
     if not shape.has_text_frame:
         return False
 
@@ -45,32 +50,41 @@ def substitute_text_in_shape(shape, new_text: str, card_data: Optional[Dict[str,
         p.text = new_text
         return True
 
-    # Check if shape is a multi-line card containing separate paragraphs for name, designation, branch
+    # Multi-line card substitution: strictly template-derived line mappings
     if card_data and len(tf.paragraphs) >= 2:
-        field_order = ["employee_name", "designation", "branch", "award_name"]
-        for p_idx, p in enumerate(tf.paragraphs):
-            if p_idx < len(field_order):
-                f_key = field_order[p_idx]
-                line_val = card_data.get(f_key, "")
-                if p.runs:
-                    font_name = p.runs[0].font.name
-                    font_size = p.runs[0].font.size
-                    font_bold = p.runs[0].font.bold
-                    font_italic = p.runs[0].font.italic
-                    font_color = p.runs[0].font.color.rgb if (p.runs[0].font.color and hasattr(p.runs[0].font.color, "rgb")) else None
-                    alignment = p.alignment
+        effective_map: Dict[int, str] = {}
+        if line_mappings:
+            effective_map = {int(k): v for k, v in line_mappings.items()}
+        else:
+            from app.services.mapping_service import infer_card_line_mappings
+            sample_paras = [p.text for p in tf.paragraphs]
+            effective_map = infer_card_line_mappings(sample_paras)
 
-                    p.text = line_val
-                    if p.runs:
-                        r = p.runs[0]
-                        if font_name: r.font.name = font_name
-                        if font_size: r.font.size = font_size
-                        if font_bold is not None: r.font.bold = font_bold
-                        if font_italic is not None: r.font.italic = font_italic
-                        if font_color: r.font.color.rgb = font_color
-                        p.alignment = alignment
-                else:
-                    p.text = line_val
+        for p_idx, p in enumerate(tf.paragraphs):
+            f_key = effective_map.get(p_idx)
+            if not f_key:
+                continue
+
+            line_val = card_data.get(f_key, "")
+            if p.runs:
+                font_name = p.runs[0].font.name
+                font_size = p.runs[0].font.size
+                font_bold = p.runs[0].font.bold
+                font_italic = p.runs[0].font.italic
+                font_color = p.runs[0].font.color.rgb if (p.runs[0].font.color and hasattr(p.runs[0].font.color, "rgb")) else None
+                alignment = p.alignment
+
+                p.text = line_val
+                if p.runs:
+                    r = p.runs[0]
+                    if font_name: r.font.name = font_name
+                    if font_size: r.font.size = font_size
+                    if font_bold is not None: r.font.bold = font_bold
+                    if font_italic is not None: r.font.italic = font_italic
+                    if font_color: r.font.color.rgb = font_color
+                    p.alignment = alignment
+            else:
+                p.text = line_val
         return True
 
     # Standard single-field substitution: Preserve formatting of first run
@@ -213,6 +227,31 @@ def generate_powerpoint_presentation(
                     }
 
                     if slot_mapping:
+                        # Check if slot uses a single multi-line text shape for multiple employee fields
+                        card_shape_names = {
+                            slot_mapping.employee_name.shape_name if slot_mapping.employee_name else None,
+                            slot_mapping.designation.shape_name if slot_mapping.designation else None,
+                            slot_mapping.branch.shape_name if slot_mapping.branch else None,
+                            slot_mapping.award_name.shape_name if slot_mapping.award_name else None,
+                        }
+                        card_shape_names.discard(None)
+
+                        processed_shapes = set()
+                        effective_line_mappings = slot_mapping.line_mappings or (
+                            slot_mapping.employee_name.line_mappings if slot_mapping.employee_name else None
+                        )
+
+                        for s_name in card_shape_names:
+                            if s_name and s_name not in processed_shapes:
+                                shape = find_shape_by_name(current_slide.shapes, s_name)
+                                if shape and shape.has_text_frame and len(shape.text_frame.paragraphs) >= 2:
+                                    substitute_text_in_shape(
+                                        shape,
+                                        card_data=record_dict,
+                                        line_mappings=effective_line_mappings,
+                                    )
+                                    processed_shapes.add(s_name)
+
                         field_map = {
                             "employee_name": slot_mapping.employee_name.shape_name if slot_mapping.employee_name else None,
                             "designation": slot_mapping.designation.shape_name if slot_mapping.designation else None,
@@ -220,7 +259,7 @@ def generate_powerpoint_presentation(
                             "award_name": slot_mapping.award_name.shape_name if slot_mapping.award_name else None,
                         }
                         for field_name, s_name in field_map.items():
-                            if s_name:
+                            if s_name and s_name not in processed_shapes:
                                 shape = find_shape_by_name(current_slide.shapes, s_name)
                                 val = record_dict.get(field_name, "")
                                 if len(val) > 40:
@@ -237,6 +276,7 @@ def generate_powerpoint_presentation(
                                     )
                                 if shape:
                                     substitute_text_in_shape(shape, val)
+                                processed_shapes.add(s_name)
 
                         # Clear sample photo if specified
                         if slot_mapping.photo_placeholder and slot_mapping.photo_placeholder.shape_name:
@@ -281,8 +321,25 @@ def generate_powerpoint_presentation(
                 "award_name": rec.award_name,
             }
 
+            # Check if fields share the same shape and shape is multi-line
+            card_shape_names = {s for s in field_map.values() if s}
+            processed_shapes = set()
+            effective_line_mappings = None
+            if mapping_config and mapping_config.employee_name and mapping_config.employee_name.line_mappings:
+                effective_line_mappings = mapping_config.employee_name.line_mappings
+
+            for s_name in card_shape_names:
+                shape = find_shape_by_name(target_slide.shapes, s_name)
+                if shape and shape.has_text_frame and len(shape.text_frame.paragraphs) >= 2:
+                    substitute_text_in_shape(
+                        shape,
+                        card_data=record_dict,
+                        line_mappings=effective_line_mappings,
+                    )
+                    processed_shapes.add(s_name)
+
             for field_name, s_name in field_map.items():
-                if s_name:
+                if s_name and s_name not in processed_shapes:
                     shape = find_shape_by_name(target_slide.shapes, s_name)
                     val = record_dict.get(field_name, "")
                     
@@ -301,6 +358,7 @@ def generate_powerpoint_presentation(
 
                     if shape:
                         substitute_text_in_shape(shape, val)
+                        processed_shapes.add(s_name)
 
     generation_id = uuid.uuid4().hex
     generated_filename = f"{generation_id}.pptx"

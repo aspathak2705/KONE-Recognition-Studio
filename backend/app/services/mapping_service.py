@@ -75,6 +75,100 @@ def extract_template_requirements(template_inspection: TemplateInspectionRespons
     )
 
 
+ROLE_KEYWORDS = {
+    "engineer", "specialist", "executive", "lead", "manager", "director", "consultant",
+    "officer", "assistant", "technician", "supervisor", "installer", "operator", "analyst",
+    "coordinator", "administrator", "advisor", "architect", "trainee", "intern", "vp", "president"
+}
+
+LOCATION_KEYWORDS = {
+    "branch", "region", "office", "hub", "location", "area", "zone", "city",
+    "bangalore", "bengaluru", "mumbai", "delhi", "chennai", "hyderabad", "pune", "kolkata",
+    "ahmedabad", "gurgaon", "noida", "cochin", "kochi", "india", "north", "south", "east", "west"
+}
+
+
+def infer_card_line_mappings(sample_paragraphs: List[str]) -> Dict[int, str]:
+    """
+    Template-derived semantic line inference for multi-line employee cards.
+    Infers which paragraph/line index maps to which employee field (employee_name, designation, branch, award_name)
+    without assuming a fixed universal paragraph order.
+    """
+    if not sample_paragraphs:
+        return {}
+
+    cleaned_lines = [p.strip() for p in sample_paragraphs]
+    n_lines = len(cleaned_lines)
+    assigned: Dict[int, str] = {}
+    unassigned_indices = set(range(n_lines))
+    used_fields = set()
+
+    # Pass 1: Explicit tokens / bracketed placeholders (e.g. "[Name]", "{Designation}", "<Branch>")
+    for idx in list(unassigned_indices):
+        text_lower = cleaned_lines[idx].lower().replace("[", "").replace("]", "").replace("{", "").replace("}", "").replace("<", "").replace(">", "").strip()
+        for field in CANONICAL_FIELDS:
+            field_clean = field.replace("_", "")
+            if (field_clean in text_lower or text_lower in field_clean) and field not in used_fields:
+                assigned[idx] = field
+                used_fields.add(field)
+                unassigned_indices.remove(idx)
+                break
+
+    # Pass 2: Lexical role & location matching
+    for idx in list(unassigned_indices):
+        text_lower = cleaned_lines[idx].lower()
+        words = set(text_lower.replace(",", " ").replace("/", " ").replace("-", " ").split())
+        
+        # Check designation/role match
+        if "designation" not in used_fields and (words & ROLE_KEYWORDS or any(kw in text_lower for kw in ["head of", "lead of", "chief"])):
+            assigned[idx] = "designation"
+            used_fields.add("designation")
+            unassigned_indices.remove(idx)
+            continue
+
+        # Check location/branch match
+        if "branch" not in used_fields and (words & LOCATION_KEYWORDS or any(kw in text_lower for kw in ["branch -", "location:"])):
+            assigned[idx] = "branch"
+            used_fields.add("branch")
+            unassigned_indices.remove(idx)
+            continue
+
+        # Check award match
+        if "award_name" not in used_fields and any(kw in text_lower for kw in ["award", "winner", "achievement", "recognition", "spotlight"]):
+            assigned[idx] = "award_name"
+            used_fields.add("award_name")
+            unassigned_indices.remove(idx)
+            continue
+
+    # Pass 3: Template-structure-derived residual assignment
+    # If employee_name is not yet assigned, the remaining line with title-cased/proper noun characteristics is employee_name
+    if "employee_name" not in used_fields and unassigned_indices:
+        # Prefer the first unassigned line, or line with 2-4 capitalized words
+        best_name_idx = None
+        for idx in sorted(unassigned_indices):
+            line = cleaned_lines[idx]
+            words = line.split()
+            if 1 <= len(words) <= 5 and any(w.istitle() for w in words):
+                best_name_idx = idx
+                break
+        if best_name_idx is None:
+            best_name_idx = sorted(unassigned_indices)[0]
+
+        assigned[best_name_idx] = "employee_name"
+        used_fields.add("employee_name")
+        unassigned_indices.remove(best_name_idx)
+
+    # Remaining residual lines
+    remaining_fields = [f for f in ["designation", "branch", "award_name"] if f not in used_fields]
+    for idx in sorted(unassigned_indices):
+        if remaining_fields:
+            field = remaining_fields.pop(0)
+            assigned[idx] = field
+            used_fields.add(field)
+
+    return assigned
+
+
 def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> FieldMappingConfig:
     """
     Automatically generate mapping configuration for the template.
@@ -101,13 +195,20 @@ def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> Fie
             txt_shape = slot.text_shapes[0] if slot.text_shapes else None
             img_shape = slot.image_regions[0] if slot.image_regions else None
 
+            line_map: Optional[Dict[int, str]] = None
+            if txt_shape:
+                sample_paras = [ln.strip() for ln in txt_shape.text.split("\n") if ln.strip()]
+                if len(sample_paras) >= 2:
+                    line_map = infer_card_line_mappings(sample_paras)
+
             slot_detail = SlotMappingDetail(
                 slot_index=slot.slot_index,
-                employee_name=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=True) if txt_shape else None,
-                designation=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=False) if txt_shape else None,
-                branch=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=False) if txt_shape else None,
+                employee_name=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=True, line_mappings=line_map) if txt_shape else None,
+                designation=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=False, line_mappings=line_map) if txt_shape else None,
+                branch=FieldMappingDetail(shape_name=txt_shape.shape_name, shape_id=txt_shape.shape_id, required=False, line_mappings=line_map) if txt_shape else None,
                 award_name=None,
                 photo_placeholder=FieldMappingDetail(shape_name=img_shape.shape_name, shape_id=img_shape.shape_id, required=False) if img_shape else None,
+                line_mappings=line_map,
             )
             slots.append(slot_detail)
 
@@ -128,10 +229,13 @@ def auto_suggest_mapping(template_inspection: TemplateInspectionResponse) -> Fie
             text_clean = s.text.lower().replace("_", "").replace(" ", "")
 
             if field_clean in name_clean or field_clean in text_clean:
+                sample_paras = [ln.strip() for ln in s.text.split("\n") if ln.strip()]
+                l_map = infer_card_line_mappings(sample_paras) if len(sample_paras) >= 2 else None
                 matched_detail = FieldMappingDetail(
                     shape_name=s.shape_name,
                     shape_id=s.shape_id,
                     required=True,
+                    line_mappings=l_map,
                 )
                 break
 
@@ -225,6 +329,30 @@ def validate_mapping_config(
                         )
                     # Register mapped shape
                     used_shapes[detail.shape_name] = f"slot_{slot.slot_index}"
+
+            # Check if multi-line text shape in slot has line_mappings
+            if slot.employee_name and slot.employee_name.shape_name:
+                sh = next((s for s in slide.text_shapes if s.shape_name == slot.employee_name.shape_name), None)
+                if sh:
+                    paras = [ln.strip() for ln in sh.text.split("\n") if ln.strip()]
+                    if len(paras) >= 2:
+                        eff_lm = slot.line_mappings or (slot.employee_name.line_mappings if slot.employee_name else None)
+                        if not eff_lm:
+                            inferred = infer_card_line_mappings(paras)
+                            if inferred:
+                                slot.line_mappings = inferred
+                                slot.employee_name.line_mappings = inferred
+                            else:
+                                err_msg = f"Slot #{slot.slot_index+1} multi-line shape '{slot.employee_name.shape_name}' lacks template-derived line mappings."
+                                errors.append(err_msg)
+                                structured_errors.append(
+                                    ErrorDetail(
+                                        code="AMBIGUOUS_LINE_MAPPING",
+                                        field="line_mappings",
+                                        message=err_msg,
+                                        details={"slot_index": slot.slot_index, "shape_name": slot.employee_name.shape_name},
+                                    )
+                                )
     else:
         # Legacy single-card mapping validation mode
         mapping_fields = [
@@ -251,19 +379,21 @@ def validate_mapping_config(
                     )
 
                 if detail.shape_name in used_shapes:
-                    err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
-                    errors.append(err_msg)
-                    structured_errors.append(
-                        ErrorDetail(
-                            code="AMBIGUOUS_SHAPE_MAPPING",
-                            field=field_name,
-                            message=err_msg,
-                            details={
-                                "shape_name": detail.shape_name,
-                                "conflicting_field": used_shapes[detail.shape_name],
-                            },
+                    # Allow same shape if line_mappings is present and distinct
+                    if not (detail.line_mappings or (mapping.employee_name and mapping.employee_name.line_mappings)):
+                        err_msg = f"AMBIGUOUS_SHAPE_MAPPING: Shape '{detail.shape_name}' is assigned to multiple fields ('{used_shapes[detail.shape_name]}' and '{field_name}')."
+                        errors.append(err_msg)
+                        structured_errors.append(
+                            ErrorDetail(
+                                code="AMBIGUOUS_SHAPE_MAPPING",
+                                field=field_name,
+                                message=err_msg,
+                                details={
+                                    "shape_name": detail.shape_name,
+                                    "conflicting_field": used_shapes[detail.shape_name],
+                                },
+                            )
                         )
-                    )
                 else:
                     used_shapes[detail.shape_name] = field_name
             else:

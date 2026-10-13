@@ -32,6 +32,13 @@ storage/
 scratch/
 backend/tests/
 tests/
+test/
+test_*.py
+*_test.py
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
 .pytest_cache/
 .coverage
 htmlcov/

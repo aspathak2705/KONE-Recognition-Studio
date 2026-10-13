@@ -41,6 +41,7 @@ class FieldMappingDetail(BaseModel):
     shape_id: Optional[str] = None
     placeholder_index: Optional[int] = None
     required: bool = True
+    line_mappings: Optional[Dict[int, str]] = None  # {paragraph_index: field_key} for multi-line card
 
 
 class SlotMappingDetail(BaseModel):
@@ -50,6 +51,7 @@ class SlotMappingDetail(BaseModel):
     branch: Optional[FieldMappingDetail] = None
     award_name: Optional[FieldMappingDetail] = None
     photo_placeholder: Optional[FieldMappingDetail] = None
+    line_mappings: Optional[Dict[int, str]] = None  # {paragraph_index: field_key} for multi-line card in this slot
 
 
 class CardLayoutConfig(BaseModel):

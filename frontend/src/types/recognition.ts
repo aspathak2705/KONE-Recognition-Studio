@@ -80,6 +80,17 @@ export interface FieldMappingDetail {
   shape_id?: string;
   placeholder_index?: number;
   required: boolean;
+  line_mappings?: Record<number, string>;
+}
+
+export interface SlotMappingDetail {
+  slot_index: number;
+  employee_name?: FieldMappingDetail;
+  designation?: FieldMappingDetail;
+  branch?: FieldMappingDetail;
+  award_name?: FieldMappingDetail;
+  photo_placeholder?: FieldMappingDetail;
+  line_mappings?: Record<number, string>;
 }
 
 export interface FieldMappingConfig {
@@ -87,6 +98,8 @@ export interface FieldMappingConfig {
   designation?: FieldMappingDetail;
   branch?: FieldMappingDetail;
   award_name?: FieldMappingDetail;
+  template_slide_index?: number;
+  slots?: SlotMappingDetail[];
 }
 
 export interface MappingValidationResponse {
