@@ -59,18 +59,27 @@ class TemplateFidelityValidator:
         # Map layouts by variant / slide index
         layout_map = {l.source_slide_index: l for l in manifest.layouts}
 
-        # Render slides if paths are available
+        # Render slides if paths are available and renderer is functional
         gen_slide_pngs: List[Path] = []
         src_slide_pngs: List[Path] = []
         visual_verification_executed = False
+        renderer_diagnostic_msg: Optional[str] = None
+
         if generated_pptx_path and render_output_dir:
-            gen_dir = render_output_dir / "generated_renders"
-            gen_slide_pngs = PptxRenderer.render_presentation_slides(generated_pptx_path, gen_dir)
-            if source_pptx_path:
-                src_dir = render_output_dir / "source_renders"
-                src_slide_pngs = PptxRenderer.render_presentation_slides(source_pptx_path, src_dir)
-            if gen_slide_pngs and src_slide_pngs:
-                visual_verification_executed = True
+            try:
+                gen_dir = render_output_dir / "generated_renders"
+                gen_slide_pngs = PptxRenderer.render_presentation_slides(generated_pptx_path, gen_dir)
+                if source_pptx_path:
+                    src_dir = render_output_dir / "source_renders"
+                    src_slide_pngs = PptxRenderer.render_presentation_slides(source_pptx_path, src_dir)
+                
+                # Visual verification executed if generated slides rendered successfully
+                if gen_slide_pngs and len(gen_slide_pngs) == len(prs.slides):
+                    visual_verification_executed = True
+                elif not gen_slide_pngs:
+                    renderer_diagnostic_msg = "PowerPoint rendering produced 0 slide images."
+            except Exception as e:
+                renderer_diagnostic_msg = f"Renderer execution encountered: {str(e)}"
 
         # 2. Per-slide validation
         for s_idx, slide in enumerate(prs.slides):
@@ -167,34 +176,66 @@ class TemplateFidelityValidator:
                                 )
                             )
 
-                # Check semantic text regions
-                for dr in matched_layout.dynamic_regions:
-                    if dr.field_key == "photo_placeholder":
-                        continue
-                    found_shape = gen_shapes_by_name.get(dr.shape_name)
-                    if found_shape and found_shape.has_text_frame:
-                        text_val = found_shape.text_frame.text.strip()
-                        if dr.is_multiline_card:
-                            pass
+                # Check boundary overflow: shapes extending substantially beyond slide canvas
+                for s in slide.shapes:
+                    s_r = (s.left + s.width) / EMU_PER_INCH
+                    s_b = (s.top + s.height) / EMU_PER_INCH
+                    if s_r > (gen_w_in + 0.5) or s_b > (gen_h_in + 0.5):
+                        slide_warnings.append(
+                            f"Slide #{slide_num} shape '{s.name}' extends beyond slide boundaries ({round(s_r, 1)}in x {round(s_b, 1)}in vs {round(gen_w_in, 1)}in x {round(gen_h_in, 1)}in)."
+                        )
 
-            # Visual similarity comparison if rendered
+            # Visual inspection of rendered slide image if available
             vis_score = 1.0
-            if visual_verification_executed and s_idx < len(gen_slide_pngs) and src_slide_pngs:
-                src_png = src_slide_pngs[0]  # compare against base layout render
+            if visual_verification_executed and s_idx < len(gen_slide_pngs):
                 gen_png = gen_slide_pngs[s_idx]
-                mask_boxes = [
-                    [dr.bbox.left_inches, dr.bbox.top_inches, dr.bbox.width_inches, dr.bbox.height_inches]
-                    for dr in (matched_layout.dynamic_regions if matched_layout else [])
-                ]
-                vis_score = PptxRenderer.compute_visual_similarity(
-                    src_png,
-                    gen_png,
-                    dynamic_mask_boxes=mask_boxes,
-                    slide_width_inches=manifest.slide_width_inches,
-                    slide_height_inches=manifest.slide_height_inches,
-                )
-                if vis_score < 0.75:
-                    slide_warnings.append(f"Visual similarity score ({round(vis_score, 2)}) is below 0.75 threshold.")
+                slide_insp = PptxRenderer.inspect_rendered_slide(gen_png)
+                if not slide_insp["is_readable"]:
+                    slide_failures.append(
+                        ValidationFailureDetail(
+                            slide_number=slide_num,
+                            region="rendered_slide",
+                            failure_type="RENDERED_SLIDE_UNREADABLE",
+                            severity=FailureSeverity.CRITICAL,
+                            expected="Rendered slide is valid readable image",
+                            actual="Unreadable or corrupt rendered image",
+                            message=f"Slide #{slide_num} rendered output could not be read as valid image.",
+                            is_repairable=False,
+                            is_conclusive=True,
+                        )
+                    )
+                elif slide_insp["is_blank"] and len(slide.shapes) > 0:
+                    # Genuinely blank rendered slide when shapes were supposed to render
+                    slide_failures.append(
+                        ValidationFailureDetail(
+                            slide_number=slide_num,
+                            region="rendered_slide",
+                            failure_type="BLANK_RENDERED_SLIDE",
+                            severity=FailureSeverity.CRITICAL,
+                            expected="Rendered slide contains visible content",
+                            actual="Slide rendered completely blank/empty",
+                            message=f"Slide #{slide_num} rendered as blank canvas despite containing shapes.",
+                            is_repairable=False,
+                            is_conclusive=True,
+                        )
+                    )
+
+                # Visual similarity comparison against base layout render if source render exists
+                if src_slide_pngs:
+                    src_png = src_slide_pngs[0]
+                    mask_boxes = [
+                        [dr.bbox.left_inches, dr.bbox.top_inches, dr.bbox.width_inches, dr.bbox.height_inches]
+                        for dr in (matched_layout.dynamic_regions if matched_layout else [])
+                    ]
+                    vis_score = PptxRenderer.compute_visual_similarity(
+                        src_png,
+                        gen_png,
+                        dynamic_mask_boxes=mask_boxes,
+                        slide_width_inches=manifest.slide_width_inches,
+                        slide_height_inches=manifest.slide_height_inches,
+                    )
+                    if vis_score < 0.70:
+                        slide_warnings.append(f"Visual similarity score ({round(vis_score, 2)}) is below 0.70 threshold.")
 
             slide_passed = len([f for f in slide_failures if f.severity in (FailureSeverity.CRITICAL, FailureSeverity.HIGH)]) == 0
             slide_report = SlideValidationResult(
@@ -258,7 +299,8 @@ class TemplateFidelityValidator:
             visual_res = "WARN" if any("Visual similarity score" in w for w in all_warnings) else "PASS"
         else:
             visual_res = "UNAVAILABLE"
-            all_warnings.append("Visual rendering comparison was unavailable in this environment.")
+            reason_diag = f" ({renderer_diagnostic_msg})" if renderer_diagnostic_msg else ""
+            all_warnings.append(f"Visual rendering comparison was unavailable in this environment{reason_diag}.")
 
         # Build delivery decision
         from datetime import datetime

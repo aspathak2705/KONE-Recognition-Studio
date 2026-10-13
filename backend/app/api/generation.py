@@ -148,10 +148,18 @@ def generate_presentation_endpoint(req: GenerationRequest):
         from app.services.presentation_repair_service import PresentationRepairService
         from app.schemas.fidelity import QualityClassification
 
+        render_dir = settings.GENERATED_OUTPUTS_DIR / f"renders_{gen_res.generation_id}"
+        source_pptx_path = None
+        if registered_meta:
+            source_pptx_path = template_registry._get_template_dir(req.template_file_id) / active_version.pptx_rel_path
+
         validation_report = TemplateFidelityValidator.validate_presentation(
             generated_pptx_bytes=generated_bytes,
             manifest=manifest,
             expected_records_count=len(excel_res.records),
+            generated_pptx_path=gen_path,
+            source_pptx_path=source_pptx_path,
+            render_output_dir=render_dir,
         )
         validation_report.generation_id = gen_res.generation_id
 
@@ -179,6 +187,9 @@ def generate_presentation_endpoint(req: GenerationRequest):
                     generated_pptx_bytes=generated_bytes,
                     manifest=manifest,
                     expected_records_count=len(excel_res.records),
+                    generated_pptx_path=gen_path,
+                    source_pptx_path=source_pptx_path,
+                    render_output_dir=render_dir,
                 )
                 post_val_report.generation_id = gen_res.generation_id
                 repair_record.post_repair_verified = True
