@@ -141,16 +141,16 @@ class TemplateFidelityValidator:
                                 f"Photo region '{pr.shape_name}' preserved at expected coordinates under shape '{candidate_at_bbox.name}'."
                             )
                         else:
-                            # Photo region genuinely removed / missing -> CRITICAL / REPAIRABLE defect
+                            # Photo region removed / missing -> HIGH / REPAIRABLE defect (HR inserts photos manually)
                             slide_failures.append(
                                 ValidationFailureDetail(
                                     slide_number=slide_num,
                                     region=pr.shape_name,
                                     failure_type="MISSING_PHOTO_REGION",
-                                    severity=FailureSeverity.CRITICAL,
+                                    severity=FailureSeverity.HIGH,
                                     expected=f"Photo region '{pr.shape_name}' preserved",
                                     actual="Removed / Missing",
-                                    message=f"Slide #{slide_num} lost photo region '{pr.shape_name}'. Photo slot frame must be preserved.",
+                                    message=f"Slide #{slide_num} lost photo region '{pr.shape_name}'. Photo slot frame should be preserved for manual insertion.",
                                     is_repairable=True,
                                     is_conclusive=True,
                                 )
