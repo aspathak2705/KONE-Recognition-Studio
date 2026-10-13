@@ -129,7 +129,9 @@ class GenerationResponse(BaseModel):
     record_count: int
     slide_count: int
     status: str = "completed"
-    validation_status: Optional[str] = "VERIFIED"  # "VERIFIED" or "BLOCKED"
+    validation_status: Optional[str] = "VERIFIED"  # "VERIFIED" or "BLOCKED" (backwards compatible)
+    delivery_status: Optional[str] = "READY"  # READY, READY_WITH_WARNING, REPAIR_PENDING, BLOCKED
+    quality_classification: Optional[str] = "PASS"  # PASS, WARNING, REPAIRABLE, CRITICAL
     validation_score: Optional[float] = 1.0
     warnings: List[str] = Field(default_factory=list)
     structured_warnings: List[TextLengthWarningDetail] = Field(default_factory=list)

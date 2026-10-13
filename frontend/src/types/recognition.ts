@@ -139,9 +139,21 @@ export interface SlideValidationResult {
   warnings: string[];
 }
 
+export interface DeliveryDecision {
+  delivery_status: "READY" | "READY_WITH_WARNING" | "REPAIR_PENDING" | "BLOCKED";
+  can_download: boolean;
+  reason: string;
+  hr_message: string;
+  quality_classification: "PASS" | "WARNING" | "REPAIRABLE" | "CRITICAL";
+  decision_timestamp?: string;
+}
+
 export interface FidelityValidationReport {
   generation_id: string;
   verification_status: "VERIFIED" | "BLOCKED";
+  quality_classification?: "PASS" | "WARNING" | "REPAIRABLE" | "CRITICAL";
+  delivery_status?: "READY" | "READY_WITH_WARNING" | "REPAIR_PENDING" | "BLOCKED";
+  delivery_decision?: DeliveryDecision;
   overall_score: number;
   slides_checked: number;
   slides_passed: number;
@@ -152,6 +164,7 @@ export interface FidelityValidationReport {
   semantic_result: string;
   photo_slot_result: string;
   visual_result: string;
+  visual_verification_executed?: boolean;
   failures: ValidationFailureDetail[];
   warnings: string[];
   slide_reports: SlideValidationResult[];
@@ -168,6 +181,8 @@ export interface GenerationResponse {
   slide_count: number;
   status: string;
   validation_status?: "VERIFIED" | "BLOCKED";
+  delivery_status?: "READY" | "READY_WITH_WARNING" | "REPAIR_PENDING" | "BLOCKED";
+  quality_classification?: "PASS" | "WARNING" | "REPAIRABLE" | "CRITICAL";
   validation_score?: number;
   warnings: string[];
   download_url: string;

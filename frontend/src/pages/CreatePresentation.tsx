@@ -496,79 +496,142 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
           {/* 3. Completed State: VERIFIED or BLOCKED */}
           {generationStage === "COMPLETED" && genResponse && (
             <div className="space-y-6">
-              {genResponse.validation_status === "VERIFIED" ? (
-                <>
-                  <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
-                    <ShieldCheck className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-foreground">Presentation Verified & Ready</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Generated presentation containing {genResponse.slide_count} slides for {genResponse.record_count} recognition records.
-                    </p>
-                  </div>
+              {(() => {
+                const deliveryStatus = genResponse.delivery_status || (genResponse.validation_status === "VERIFIED" ? "READY" : "BLOCKED");
+                const isReady = deliveryStatus === "READY";
+                const isWarning = deliveryStatus === "READY_WITH_WARNING";
+                const isRepairPending = deliveryStatus === "REPAIR_PENDING";
 
-                  {/* Clean HR-friendly Verified Checklist */}
-                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 max-w-md mx-auto text-left space-y-2.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>Presentation generated successfully</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>Template layout structure verified</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>Formatting & element geometry verified</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>Template graphics & branding preserved</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>Employee information verified</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>Photo regions preserved for portraits</span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
-                    <ShieldAlert className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-foreground">Presentation could not be verified</h3>
-                    <p className="text-xs text-rose-600 mt-1 max-w-lg mx-auto">
-                      Post-generation fidelity checks detected structural differences between the generated output and the master template. Download is blocked to preserve presentation quality.
-                    </p>
-                  </div>
-
-                  {/* Clean HR-friendly Blocked Reasons */}
-                  <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 max-w-md mx-auto text-left space-y-2">
-                    <div className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">
-                      Fidelity Verification Failures:
-                    </div>
-                    {validationReport?.failures && validationReport.failures.length > 0 ? (
-                      validationReport.failures.slice(0, 3).map((f, idx) => (
-                        <div key={idx} className="flex items-start gap-2 text-xs text-rose-600">
-                          <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
-                          <span>Slide {f.slide_number}: {getFriendlyFailureReason(f.failure_type, f.message)}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="flex items-start gap-2 text-xs text-rose-600">
-                        <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
-                        <span>The generated presentation differs from the selected template.</span>
+                if (isReady) {
+                  return (
+                    <>
+                      <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
+                        <ShieldCheck className="h-8 w-8" />
                       </div>
-                    )}
-                  </div>
-                </>
-              )}
+                      <div>
+                        <h3 className="text-xl font-bold text-foreground">Presentation is ready</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Generated presentation containing {genResponse.slide_count} slides for {genResponse.record_count} recognition records.
+                        </p>
+                      </div>
+
+                      {/* Clean HR-friendly Verified Checklist */}
+                      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 max-w-md mx-auto text-left space-y-2.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span>Presentation generated successfully</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span>Template layout structure verified</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span>Formatting & element geometry verified</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span>Template graphics & branding preserved</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span>Employee information verified</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <span>Photo regions preserved for manual portrait placement</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                } else if (isWarning) {
+                  return (
+                    <>
+                      <div className="h-14 w-14 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+                        <AlertTriangle className="h-8 w-8" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-foreground">Presentation is ready with minor quality warnings</h3>
+                        <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                          Presentation generated safely ({genResponse.slide_count} slides). A non-critical quality discrepancy was detected, but the presentation is safe and usable.
+                        </p>
+                      </div>
+
+                      {validationReport?.warnings && validationReport.warnings.length > 0 && (
+                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 max-w-md mx-auto text-left space-y-1.5">
+                          <div className="text-xs font-bold text-amber-700 dark:text-amber-400">Quality Notice:</div>
+                          {validationReport.warnings.slice(0, 2).map((w, idx) => (
+                            <div key={idx} className="text-xs text-amber-600 flex items-start gap-1.5">
+                              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                              <span>{w}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                } else if (isRepairPending) {
+                  return (
+                    <>
+                      <div className="h-14 w-14 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center mx-auto">
+                        <RefreshCw className="h-8 w-8" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-foreground">Action Needed Before Download</h3>
+                        <p className="text-xs text-muted-foreground mt-1 max-w-lg mx-auto">
+                          We found an issue that needs to be resolved before this presentation can be downloaded.
+                        </p>
+                      </div>
+
+                      {validationReport?.failures && validationReport.failures.length > 0 && (
+                        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 max-w-md mx-auto text-left space-y-1.5">
+                          <div className="text-xs font-bold text-blue-700 dark:text-blue-400">Identified Item:</div>
+                          {validationReport.failures.slice(0, 2).map((f, idx) => (
+                            <div key={idx} className="text-xs text-blue-600 flex items-start gap-1.5">
+                              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                              <span>Slide {f.slide_number}: {getFriendlyFailureReason(f.failure_type, f.message)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                } else {
+                  return (
+                    <>
+                      <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
+                        <ShieldAlert className="h-8 w-8" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-foreground">We couldn't safely prepare this presentation</h3>
+                        <p className="text-xs text-rose-600 mt-1 max-w-lg mx-auto">
+                          A critical fidelity issue makes this output unsafe or incomplete. Download is blocked to protect presentation quality.
+                        </p>
+                      </div>
+
+                      {/* Clean HR-friendly Blocked Reasons */}
+                      <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 max-w-md mx-auto text-left space-y-2">
+                        <div className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">
+                          Identified Defect:
+                        </div>
+                        {validationReport?.failures && validationReport.failures.length > 0 ? (
+                          validationReport.failures.slice(0, 2).map((f, idx) => (
+                            <div key={idx} className="flex items-start gap-2 text-xs text-rose-600">
+                              <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
+                              <span>Slide {f.slide_number}: {getFriendlyFailureReason(f.failure_type, f.message)}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex items-start gap-2 text-xs text-rose-600">
+                            <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
+                            <span>The generated presentation differs from the selected template.</span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                }
+              })()}
 
               {/* Collapsible Verification Details (High-level checks) */}
               {validationReport && (
@@ -594,12 +657,12 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
                         <span>Fidelity Verification Status</span>
                         <span
                           className={
-                            validationReport.verification_status === "VERIFIED"
+                            (genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || genResponse.validation_status === "VERIFIED")
                               ? "text-emerald-600 font-bold"
                               : "text-rose-600 font-bold"
                           }
                         >
-                          {validationReport.verification_status} ({validationReport.slides_passed}/{validationReport.slides_checked} slides passed)
+                          {genResponse.delivery_status || validationReport.verification_status} ({validationReport.slides_passed}/{validationReport.slides_checked} slides passed)
                         </span>
                       </div>
 
@@ -637,7 +700,11 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
                         </div>
                         <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
                           <span className="text-muted-foreground">Visual Fidelity</span>
-                          <span className={`font-semibold ${validationReport.visual_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
+                          <span className={`font-semibold ${
+                            validationReport.visual_result === "PASS" 
+                              ? "text-emerald-600" 
+                              : (validationReport.visual_result === "UNAVAILABLE" ? "text-muted-foreground" : "text-amber-600")
+                          }`}>
                             {validationReport.visual_result}
                           </span>
                         </div>
@@ -649,7 +716,7 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
 
               {/* Action Buttons: Gated Download */}
               <div className="pt-4 flex justify-center gap-4 border-t border-border">
-                {genResponse.validation_status === "VERIFIED" ? (
+                {(genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || (!genResponse.delivery_status && genResponse.validation_status === "VERIFIED")) ? (
                   <a
                     href={getDownloadUrl(genResponse.generation_id)}
                     download
@@ -661,7 +728,11 @@ export function CreatePresentation({ onNavigateToTemplates }: CreatePresentation
                   <button
                     disabled
                     className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
-                    title="Download blocked: post-generation verification detected fidelity failures"
+                    title={
+                      genResponse.delivery_status === "REPAIR_PENDING"
+                        ? "Download pending: issue resolution required"
+                        : "Download blocked: critical fidelity defect detected"
+                    }
                   >
                     <Download className="h-4 w-4" /> Download Blocked
                   </button>

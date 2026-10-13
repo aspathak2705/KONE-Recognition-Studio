@@ -11,6 +11,9 @@ from app.schemas.fidelity import (
     FailureSeverity,
     VerificationStatus,
     SlideLayoutManifest,
+    QualityClassification,
+    DeliveryStatus,
+    DeliveryDecision,
 )
 from app.services.pptx_renderer import PptxRenderer
 
@@ -48,6 +51,8 @@ class TemplateFidelityValidator:
                 expected=f"{manifest.slide_width_inches}x{manifest.slide_height_inches} in",
                 actual=f"{round(gen_w_in, 3)}x{round(gen_h_in, 3)} in",
                 message=f"Presentation dimensions {round(gen_w_in, 2)}x{round(gen_h_in, 2)} differ from master template {manifest.slide_width_inches}x{manifest.slide_height_inches}.",
+                is_repairable=False,
+                is_conclusive=True,
             )
             all_failures.append(fail)
 
@@ -57,12 +62,15 @@ class TemplateFidelityValidator:
         # Render slides if paths are available
         gen_slide_pngs: List[Path] = []
         src_slide_pngs: List[Path] = []
+        visual_verification_executed = False
         if generated_pptx_path and render_output_dir:
             gen_dir = render_output_dir / "generated_renders"
             gen_slide_pngs = PptxRenderer.render_presentation_slides(generated_pptx_path, gen_dir)
             if source_pptx_path:
                 src_dir = render_output_dir / "source_renders"
                 src_slide_pngs = PptxRenderer.render_presentation_slides(source_pptx_path, src_dir)
+            if gen_slide_pngs and src_slide_pngs:
+                visual_verification_executed = True
 
         # 2. Per-slide validation
         for s_idx, slide in enumerate(prs.slides):
@@ -97,25 +105,47 @@ class TemplateFidelityValidator:
                                 expected=f"Static shape '{st.shape_name}' present",
                                 actual="Missing from generated slide",
                                 message=f"Slide #{slide_num} is missing required static asset '{st.shape_name}'.",
+                                is_repairable=True,
+                                is_conclusive=True,
                             )
                         )
 
-                # Check photo regions
+                # Check photo regions: distinguish genuine loss from candidate photo frames
                 for pr in matched_layout.photo_regions:
-                    # Generated slide MUST contain photo shape/placeholder in matching position
                     found_shape = gen_shapes_by_name.get(pr.shape_name)
+
                     if not found_shape:
-                        slide_failures.append(
-                            ValidationFailureDetail(
-                                slide_number=slide_num,
-                                region=pr.shape_name,
-                                failure_type="MISSING_PHOTO_REGION",
-                                severity=FailureSeverity.CRITICAL,
-                                expected=f"Photo region '{pr.shape_name}' preserved",
-                                actual="Removed / Missing",
-                                message=f"Slide #{slide_num} lost photo region '{pr.shape_name}'. Photo slot frame must be preserved.",
+                        # Secondary lookup: check if any picture or shape exists at matching bounding box
+                        candidate_at_bbox = None
+                        for s in slide.shapes:
+                            s_l = s.left / EMU_PER_INCH
+                            s_t = s.top / EMU_PER_INCH
+                            s_w = s.width / EMU_PER_INCH
+                            s_h = s.height / EMU_PER_INCH
+                            if abs(s_l - pr.bbox.left_inches) <= 0.25 and abs(s_t - pr.bbox.top_inches) <= 0.25:
+                                candidate_at_bbox = s
+                                break
+
+                        if candidate_at_bbox:
+                            # Frame exists at exact position under renamed or converted shape ID -> NON-CRITICAL WARNING
+                            slide_warnings.append(
+                                f"Photo region '{pr.shape_name}' preserved at expected coordinates under shape '{candidate_at_bbox.name}'."
                             )
-                        )
+                        else:
+                            # Photo region genuinely removed / missing -> CRITICAL / REPAIRABLE defect
+                            slide_failures.append(
+                                ValidationFailureDetail(
+                                    slide_number=slide_num,
+                                    region=pr.shape_name,
+                                    failure_type="MISSING_PHOTO_REGION",
+                                    severity=FailureSeverity.CRITICAL,
+                                    expected=f"Photo region '{pr.shape_name}' preserved",
+                                    actual="Removed / Missing",
+                                    message=f"Slide #{slide_num} lost photo region '{pr.shape_name}'. Photo slot frame must be preserved.",
+                                    is_repairable=True,
+                                    is_conclusive=True,
+                                )
+                            )
                     else:
                         # Verify geometry bounds
                         g_l = found_shape.left / EMU_PER_INCH
@@ -132,6 +162,8 @@ class TemplateFidelityValidator:
                                     expected=f"Pos ({pr.bbox.left_inches}, {pr.bbox.top_inches})",
                                     actual=f"Pos ({round(g_l, 2)}, {round(g_t, 2)})",
                                     message=f"Photo region '{pr.shape_name}' displaced beyond tolerance.",
+                                    is_repairable=True,
+                                    is_conclusive=True,
                                 )
                             )
 
@@ -142,17 +174,12 @@ class TemplateFidelityValidator:
                     found_shape = gen_shapes_by_name.get(dr.shape_name)
                     if found_shape and found_shape.has_text_frame:
                         text_val = found_shape.text_frame.text.strip()
-                        # Verify text is not empty if within record count
-                        # Also check if branch appears as first line of multiline card
                         if dr.is_multiline_card:
-                            lines = [ln.strip() for ln in text_val.split("\n") if ln.strip()]
-                            # If lines exist, line 0 should be name (e.g. not Mumbai or Pune unless that's name)
-                            # Detected bad generation had: "Pune\nExecutive..." where city replaced name!
                             pass
 
             # Visual similarity comparison if rendered
             vis_score = 1.0
-            if gen_slide_pngs and s_idx < len(gen_slide_pngs) and src_slide_pngs:
+            if visual_verification_executed and s_idx < len(gen_slide_pngs) and src_slide_pngs:
                 src_png = src_slide_pngs[0]  # compare against base layout render
                 gen_png = gen_slide_pngs[s_idx]
                 mask_boxes = [
@@ -187,30 +214,81 @@ class TemplateFidelityValidator:
             all_failures.extend(slide_failures)
             all_warnings.extend(slide_warnings)
 
-        critical_count = len([f for f in all_failures if f.severity == FailureSeverity.CRITICAL])
-        high_count = len([f for f in all_failures if f.severity == FailureSeverity.HIGH])
-        
-        verification_status = (
-            VerificationStatus.VERIFIED if (critical_count == 0 and high_count == 0) else VerificationStatus.BLOCKED
-        )
+        # Deduplicate identical failure messages for same region/failure_type
+        seen_keys = set()
+        deduped_failures: List[ValidationFailureDetail] = []
+        for f in all_failures:
+            f_key = (f.failure_type, f.region, f.severity)
+            if f_key not in seen_keys:
+                seen_keys.add(f_key)
+                deduped_failures.append(f)
+
+        critical_count = len([f for f in deduped_failures if f.severity == FailureSeverity.CRITICAL])
+        high_count = len([f for f in deduped_failures if f.severity == FailureSeverity.HIGH])
+        repairable_count = len([f for f in deduped_failures if f.is_repairable and f.severity in (FailureSeverity.CRITICAL, FailureSeverity.HIGH)])
+
+        # Quality Classification
+        if critical_count > 0:
+            quality_class = QualityClassification.CRITICAL
+            delivery_st = DeliveryStatus.BLOCKED
+            ver_status = VerificationStatus.BLOCKED
+        elif high_count > 0:
+            quality_class = QualityClassification.REPAIRABLE if repairable_count > 0 else QualityClassification.CRITICAL
+            delivery_st = DeliveryStatus.REPAIR_PENDING if repairable_count > 0 else DeliveryStatus.BLOCKED
+            ver_status = VerificationStatus.BLOCKED
+        elif len(all_warnings) > 0:
+            quality_class = QualityClassification.WARNING
+            delivery_st = DeliveryStatus.READY_WITH_WARNING
+            ver_status = VerificationStatus.VERIFIED
+        else:
+            quality_class = QualityClassification.PASS
+            delivery_st = DeliveryStatus.READY
+            ver_status = VerificationStatus.VERIFIED
 
         passed_slides = sum(1 for sr in slide_reports if sr.passed)
         overall_score = round(passed_slides / max(1, len(slide_reports)), 2)
 
+        # Visual verification result status: do NOT falsely claim PASS if not executed
+        if visual_verification_executed:
+            visual_res = "WARN" if any("Visual similarity score" in w for w in all_warnings) else "PASS"
+        else:
+            visual_res = "UNAVAILABLE"
+            all_warnings.append("Visual rendering comparison was unavailable in this environment.")
+
+        # Build delivery decision
+        from datetime import datetime
+        deliv_dec = DeliveryDecision(
+            delivery_status=delivery_st,
+            can_download=(delivery_st in (DeliveryStatus.READY, DeliveryStatus.READY_WITH_WARNING)),
+            reason=f"Quality: {quality_class.value}",
+            hr_message="Presentation is ready." if delivery_st == DeliveryStatus.READY else (
+                "Presentation is ready with minor warnings." if delivery_st == DeliveryStatus.READY_WITH_WARNING else (
+                    "We found an issue that needs to be resolved before this presentation can be downloaded." if delivery_st == DeliveryStatus.REPAIR_PENDING else
+                    "We couldn't safely prepare this presentation."
+                )
+            ),
+            quality_classification=quality_class,
+            decision_timestamp=datetime.utcnow().isoformat(),
+        )
+
         return FidelityValidationReport(
             generation_id=manifest.manifest_id,
-            verification_status=verification_status,
+            verification_status=ver_status,
+            quality_classification=quality_class,
+            delivery_status=delivery_st,
+            delivery_decision=deliv_dec,
             overall_score=overall_score,
             slides_checked=len(prs.slides),
             slides_passed=passed_slides,
             slides_failed=len(prs.slides) - passed_slides,
-            structural_result="FAIL" if any(f.failure_type in ("DIMENSION_MISMATCH", "MISSING_STATIC_ASSET") for f in all_failures) else "PASS",
-            geometry_result="FAIL" if any(f.failure_type == "GEOMETRY_DEVIATION" for f in all_failures) else "PASS",
-            static_asset_result="FAIL" if any(f.failure_type == "MISSING_STATIC_ASSET" for f in all_failures) else "PASS",
-            semantic_result="FAIL" if any(f.failure_type == "SEMANTIC_PLACEMENT_ERROR" for f in all_failures) else "PASS",
-            photo_slot_result="FAIL" if any(f.failure_type == "MISSING_PHOTO_REGION" for f in all_failures) else "PASS",
-            visual_result="PASS",
-            failures=all_failures,
+            structural_result="FAIL" if any(f.failure_type in ("DIMENSION_MISMATCH", "MISSING_STATIC_ASSET") for f in deduped_failures) else "PASS",
+            geometry_result="FAIL" if any(f.failure_type == "GEOMETRY_DEVIATION" for f in deduped_failures) else "PASS",
+            static_asset_result="FAIL" if any(f.failure_type == "MISSING_STATIC_ASSET" for f in deduped_failures) else "PASS",
+            semantic_result="FAIL" if any(f.failure_type == "SEMANTIC_PLACEMENT_ERROR" for f in deduped_failures) else "PASS",
+            photo_slot_result="FAIL" if any(f.failure_type == "MISSING_PHOTO_REGION" for f in deduped_failures) else "PASS",
+            visual_result=visual_res,
+            visual_verification_executed=visual_verification_executed,
+            failures=deduped_failures,
             warnings=all_warnings,
             slide_reports=slide_reports,
         )

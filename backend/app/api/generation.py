@@ -152,9 +152,11 @@ def generate_presentation_endpoint(req: GenerationRequest):
         )
         validation_report.generation_id = gen_res.generation_id
 
-        # Update GenerationResponse with validation results
+        # Update GenerationResponse with validation and delivery results
         gen_res.validation_status = validation_report.verification_status.value
         gen_res.validation_score = validation_report.overall_score
+        gen_res.delivery_status = validation_report.delivery_status.value
+        gen_res.quality_classification = validation_report.quality_classification.value
 
         # Persist full validation report JSON and updated generation job metadata
         import json
@@ -207,28 +209,21 @@ def download_generated_presentation(generation_id: str):
     if not gen_path.exists():
         raise HTTPException(status_code=404, detail="Generated presentation file not found.")
 
-    # Enforce validation gate: must be COMPLETED and VERIFIED
-    if job_meta_path.exists():
-        import json
-        with open(job_meta_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
-            status = meta.get("status")
-            val_status = meta.get("validation_status")
-            if status != "completed" or val_status != "VERIFIED":
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "error": "PRESENTATION_NOT_VERIFIED",
-                        "message": f"This presentation has not passed template fidelity verification. Current state: '{val_status or 'UNVERIFIED'}'.",
-                    },
-                )
-    else:
-        # Fail closed: reject download if generation metadata missing
+    # Enforce authoritative backend delivery policy via DeliveryService
+    from app.services.delivery_service import DeliveryService
+    decision = DeliveryService.evaluate_delivery_eligibility(
+        generation_id=generation_id,
+        generated_pptx_path=gen_path,
+    )
+
+    if not decision.can_download:
         raise HTTPException(
             status_code=403,
             detail={
                 "error": "PRESENTATION_NOT_VERIFIED",
-                "message": "Presentation verification metadata missing. Download blocked.",
+                "delivery_status": decision.delivery_status.value,
+                "reason": decision.reason,
+                "message": decision.hr_message,
             },
         )
 
