@@ -5,8 +5,8 @@ from typing import List, Optional
 class RecognitionRecord(BaseModel):
     row_number: int
     employee_name: str
-    designation: str
-    branch: str
+    designation: Optional[str] = ""
+    branch: Optional[str] = ""
     award_name: str
     is_valid: bool = True
     errors: List[str] = Field(default_factory=list)

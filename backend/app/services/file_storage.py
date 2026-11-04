@@ -36,3 +36,29 @@ def save_uploaded_file(file: UploadFile, target_dir: Path, allowed_extensions: s
         f.write(content)
         
     return destination, file_id
+
+
+def atomic_write_json(target_path: Path, data: dict, indent: int = 2) -> None:
+    """
+    Atomically write JSON data to target_path via temporary file and atomic replace.
+    Ensures readers never observe partial or corrupt JSON during write.
+    """
+    import json
+    import os
+    target_path = Path(target_path).resolve()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = target_path.parent / f"{target_path.name}.tmp_{uuid.uuid4().hex}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, target_path)
+    except Exception:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        raise
+

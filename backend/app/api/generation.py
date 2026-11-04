@@ -205,15 +205,13 @@ def generate_presentation_endpoint(req: GenerationRequest):
         gen_res.delivery_status = validation_report.delivery_status.value
         gen_res.quality_classification = validation_report.quality_classification.value
 
-        # Persist full validation report JSON and updated generation job metadata
-        import json
+        # Persist full validation report JSON and updated generation job metadata atomically
+        from app.services.file_storage import atomic_write_json
         val_report_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}_validation.json"
-        with open(val_report_path, "w", encoding="utf-8") as f:
-            json.dump(validation_report.dict(), f, indent=2)
+        atomic_write_json(val_report_path, validation_report.dict())
 
         job_meta_path = settings.GENERATED_OUTPUTS_DIR / f"{gen_res.generation_id}.json"
-        with open(job_meta_path, "w", encoding="utf-8") as f:
-            json.dump(gen_res.dict(), f, indent=2)
+        atomic_write_json(job_meta_path, gen_res.dict())
 
         return gen_res
     except ValueError as ve:

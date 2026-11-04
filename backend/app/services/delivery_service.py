@@ -80,6 +80,15 @@ class DeliveryService:
                 try:
                     with open(job_meta_path, "r", encoding="utf-8") as f:
                         job_meta = json.load(f)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    return DeliveryDecision(
+                        delivery_status=DeliveryStatus.BLOCKED,
+                        can_download=False,
+                        reason="GENERATION_METADATA_CORRUPT",
+                        hr_message="Presentation quality checks could not be verified. Metadata is corrupted.",
+                        quality_classification=QualityClassification.CRITICAL,
+                        decision_timestamp=now_iso,
+                    )
                 except Exception:
                     job_meta = None
 
@@ -123,6 +132,15 @@ class DeliveryService:
                     with open(val_path, "r", encoding="utf-8") as f:
                         val_dict = json.load(f)
                         validation_report = FidelityValidationReport(**val_dict)
+                except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                    return DeliveryDecision(
+                        delivery_status=DeliveryStatus.BLOCKED,
+                        can_download=False,
+                        reason="VALIDATION_METADATA_CORRUPT",
+                        hr_message="Presentation validation checks could not be read safely.",
+                        quality_classification=QualityClassification.CRITICAL,
+                        decision_timestamp=now_iso,
+                    )
                 except Exception:
                     validation_report = None
 

@@ -391,11 +391,10 @@ def generate_powerpoint_presentation(
         download_url=f"/api/generations/{generation_id}/download",
     )
 
-    # Persist job metadata JSON file for historical integrity
+    # Persist job metadata JSON file atomically for historical integrity
+    from app.services.file_storage import atomic_write_json
     job_meta_path = settings.GENERATED_OUTPUTS_DIR / f"{generation_id}.json"
-    import json
-    with open(job_meta_path, "w", encoding="utf-8") as f:
-        json.dump(response.dict(), f, indent=2)
+    atomic_write_json(job_meta_path, response.dict())
 
     return response
 

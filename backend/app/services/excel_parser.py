@@ -33,15 +33,15 @@ def get_schema_info() -> SchemaResponse:
             field_name="designation",
             canonical_header="designation",
             accepted_aliases=HEADER_MAPPINGS["designation"],
-            required=True,
-            description="Employee role or job title",
+            required=False,
+            description="Employee role or job title (optional)",
         ),
         FieldSchemaInfo(
             field_name="branch",
             canonical_header="branch",
             accepted_aliases=HEADER_MAPPINGS["branch"],
-            required=True,
-            description="Branch location or office name",
+            required=False,
+            description="Branch location or office name (optional)",
         ),
         FieldSchemaInfo(
             field_name="award_name",
@@ -57,7 +57,8 @@ def get_schema_info() -> SchemaResponse:
         rules=[
             "First row must contain header columns.",
             "Supported headers: employee_name, designation, branch, award_name.",
-            "Values cannot be empty or whitespace-only.",
+            "Required fields: employee_name, award_name. designation and branch are optional.",
+            "Empty optional values are preserved as blank and not fabricated.",
             "Duplicate records across all 4 fields will be flagged.",
         ],
     )
@@ -77,7 +78,7 @@ def parse_and_validate_excel(
     filename: str,
     required_fields: Optional[List[str]] = None,
 ) -> ExcelValidationResponse:
-    target_required = required_fields if required_fields is not None else ["employee_name", "designation", "branch", "award_name"]
+    target_required = required_fields if required_fields is not None else ["employee_name", "award_name"]
     try:
         wb = openpyxl.load_workbook(filename=BytesIO(file_content), data_only=True)
     except Exception as e:
