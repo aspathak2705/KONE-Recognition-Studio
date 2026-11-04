@@ -2,21 +2,122 @@ import os
 import sys
 import uuid
 import time
+import json
 import shutil
 import tempfile
 import logging
+import subprocess
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Script executed in an isolated child process to isolate PowerPoint COM lifecycle
+# completely from FastAPI AnyIO / asyncio worker threads.
+_POWERPOINT_WORKER_SCRIPT = """
+import sys
+import json
+import os
+import time
+from pathlib import Path
+
+action = sys.argv[1]
+
+if action == "check":
+    if sys.platform != "win32":
+        print(json.dumps({"available": False, "reason": "unsupported_platform"}))
+        sys.exit(0)
+    try:
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        ppt = win32com.client.Dispatch("PowerPoint.Application")
+        if ppt:
+            try:
+                ppt.Quit()
+            except Exception:
+                pass
+            print(json.dumps({"available": True}))
+        else:
+            print(json.dumps({"available": False, "reason": "dispatch_returned_none"}))
+    except Exception as e:
+        print(json.dumps({"available": False, "error": str(e)}))
+    finally:
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+    sys.exit(0)
+
+elif action == "render":
+    pptx_path = Path(sys.argv[2])
+    output_dir = Path(sys.argv[3])
+    width = int(sys.argv[4])
+    height = int(sys.argv[5])
+    timeout_seconds = int(sys.argv[6])
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rendered_paths = []
+
+    if sys.platform != "win32":
+        print(json.dumps({"status": "unsupported_platform", "rendered": []}))
+        sys.exit(0)
+
+    ppt = None
+    pres = None
+    start_time = time.time()
+    try:
+        import win32com.client
+        import pythoncom
+
+        pythoncom.CoInitialize()
+        ppt = win32com.client.Dispatch("PowerPoint.Application")
+        abs_pptx = str(pptx_path.resolve())
+        pres = ppt.Presentations.Open(abs_pptx, WithWindow=False)
+
+        slide_count = pres.Slides.Count
+        for i in range(1, slide_count + 1):
+            if (time.time() - start_time) > timeout_seconds:
+                raise TimeoutError(f"PowerPoint rendering exceeded timeout limit of {timeout_seconds}s.")
+
+            out_png = output_dir / f"slide_{i}.png"
+            if out_png.exists():
+                out_png.unlink()
+
+            pres.Slides(i).Export(str(out_png.resolve()), "PNG", width, height)
+            if out_png.exists() and out_png.stat().st_size > 0:
+                rendered_paths.append(str(out_png.resolve()))
+
+        print(json.dumps({"status": "success", "rendered": rendered_paths}))
+    except Exception as e:
+        print(json.dumps({"status": "error", "error": str(e), "rendered": rendered_paths}))
+    finally:
+        if pres:
+            try:
+                pres.Close()
+            except Exception:
+                pass
+        if ppt:
+            try:
+                ppt.Quit()
+            except Exception:
+                pass
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+    sys.exit(0)
+"""
+
 
 class PptxRenderer:
     """
     Template-independent presentation renderer and visual verification service.
-    Supports Windows PowerPoint COM automation with strict lifecycle isolation,
-    process cleanup, timeouts, and deterministic headless fallback.
+    Supports Windows PowerPoint COM automation with strict lifecycle isolation
+    via dedicated worker subprocesses, process cleanup, timeouts, and safe degradation.
     """
 
     @classmethod
@@ -25,17 +126,17 @@ class PptxRenderer:
         if sys.platform != "win32":
             return False
         try:
-            import win32com.client
-            # Verify COM Dispatch without creating an enduring visible window
-            ppt = win32com.client.Dispatch("PowerPoint.Application")
-            if ppt:
-                try:
-                    ppt.Quit()
-                except Exception:
-                    pass
-                return True
+            res = subprocess.run(
+                [sys.executable, "-c", _POWERPOINT_WORKER_SCRIPT, "check"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                data = json.loads(res.stdout.strip())
+                return bool(data.get("available"))
         except Exception as e:
-            logger.debug(f"PowerPoint COM not available: {e}")
+            logger.debug(f"PowerPoint COM availability check failed: {e}")
             return False
         return False
 
@@ -50,65 +151,49 @@ class PptxRenderer:
     ) -> List[Path]:
         """
         Renders generated presentation slides into individual PNG files in output_dir.
-        Uses isolated temporary working directories, explicit process cleanup, and timeouts.
+        Executes COM automation in a dedicated, isolated worker subprocess so that COM
+        apartment initialization and teardown never touch FastAPI AnyIO worker threads.
         Returns a list of rendered slide image paths.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
-        rendered_paths: List[Path] = []
 
         if not pptx_path.exists() or pptx_path.stat().st_size == 0:
             logger.warning(f"PPTX file {pptx_path} does not exist or is empty.")
             return []
 
-        # Attempt native PowerPoint COM automation on Windows if available
+        # Attempt native PowerPoint COM automation in dedicated subprocess on Windows
         if sys.platform == "win32":
-            ppt = None
-            pres = None
-            start_time = time.time()
             try:
-                import win32com.client
-                import pythoncom
-
-                pythoncom.CoInitialize()
-                ppt = win32com.client.Dispatch("PowerPoint.Application")
-                # WithWindow=False prevents window theft/flashing during automation
-                abs_pptx = str(pptx_path.resolve())
-                pres = ppt.Presentations.Open(abs_pptx, WithWindow=False)
-
-                slide_count = pres.Slides.Count
-                for i in range(1, slide_count + 1):
-                    if (time.time() - start_time) > timeout_seconds:
-                        raise TimeoutError(f"PowerPoint rendering exceeded timeout limit of {timeout_seconds}s.")
-
-                    out_png = output_dir / f"slide_{i}.png"
-                    # Remove any stale prior image
-                    if out_png.exists():
-                        out_png.unlink()
-
-                    pres.Slides(i).Export(str(out_png.resolve()), "PNG", width, height)
-                    if out_png.exists() and out_png.stat().st_size > 0:
-                        rendered_paths.append(out_png)
-
-                return rendered_paths
+                proc_timeout = timeout_seconds + 15
+                res = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        _POWERPOINT_WORKER_SCRIPT,
+                        "render",
+                        str(pptx_path.resolve()),
+                        str(output_dir.resolve()),
+                        str(width),
+                        str(height),
+                        str(timeout_seconds),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=proc_timeout,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    data = json.loads(res.stdout.strip())
+                    if data.get("status") == "success":
+                        rendered_files = [Path(p) for p in data.get("rendered", []) if Path(p).exists()]
+                        return rendered_files
+                    else:
+                        logger.warning(f"PowerPoint COM rendering subprocess error: {data.get('error')}")
+                else:
+                    logger.warning(f"PowerPoint COM rendering subprocess exited with code {res.returncode}: {res.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"PowerPoint COM rendering subprocess exceeded timeout of {timeout_seconds}s.")
             except Exception as e:
                 logger.warning(f"PowerPoint COM rendering encountered issue: {e}")
-            finally:
-                # Guaranteed cleanup of presentation and application COM objects
-                if pres:
-                    try:
-                        pres.Close()
-                    except Exception:
-                        pass
-                if ppt:
-                    try:
-                        ppt.Quit()
-                    except Exception:
-                        pass
-                try:
-                    import pythoncom
-                    pythoncom.CoUninitialize()
-                except Exception:
-                    pass
 
         # Headless fallback / renderer unavailable: return empty list and report honestly
         logger.info(f"Visual rendering comparison unavailable for {pptx_path.name}")
