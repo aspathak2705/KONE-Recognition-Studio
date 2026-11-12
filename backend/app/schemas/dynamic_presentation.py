@@ -43,4 +43,7 @@ class DynamicGenerationResponse(BaseModel):
     pptx_path: str
     is_valid: bool = True
     validation_findings: List[SlideGeometryFinding] = Field(default_factory=list)
+    rendered_slide_urls: List[str] = Field(default_factory=list)
+    delivery_status: str = "READY"
+    can_download: bool = True
     created_at: str

@@ -278,3 +278,19 @@ def download_generated_presentation(generation_id: str):
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
 
+
+@router.get("/api/generations/{generation_id}/renders/{filename}")
+def get_rendered_slide(generation_id: str, filename: str):
+    if not generation_id or not HEX_ID_PATTERN.match(generation_id):
+        raise HTTPException(status_code=400, detail="Invalid generation ID.")
+
+    clean_filename = Path(filename).name
+    render_dir = (settings.GENERATED_OUTPUTS_DIR / f"renders_{generation_id}").resolve()
+    target_path = (render_dir / clean_filename).resolve()
+
+    if not str(target_path).startswith(str(render_dir)) or not target_path.exists():
+        raise HTTPException(status_code=404, detail="Rendered slide not found.")
+
+    return FileResponse(path=target_path, media_type="image/png")
+
+

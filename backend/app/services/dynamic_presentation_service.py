@@ -94,8 +94,20 @@ class DynamicPresentationService:
         # Step 6: Verify Geometry
         findings = cls._validate_presentation_geometry(prs)
 
-        # Step 7: Persist Generation Metadata
+        # Step 7: Render Slide Previews (using isolated COM worker if available)
+        from app.services.pptx_renderer import PptxRenderer
+        render_dir = settings.GENERATED_OUTPUTS_DIR / f"renders_{generation_id}"
+        rendered_paths = PptxRenderer.render_presentation_slides(dest_pptx_path, render_dir, timeout_seconds=45)
+        rendered_slide_urls = [
+            f"/api/generations/{generation_id}/renders/{p.name}" for p in rendered_paths
+        ]
+
+        # Step 8: Persist Generation Metadata
         now_iso = datetime.datetime.utcnow().isoformat()
+        has_critical_error = any(f.severity == "ERROR" for f in findings)
+        delivery_status = "BLOCKED" if has_critical_error else "READY"
+        can_download = not has_critical_error
+
         response = DynamicGenerationResponse(
             generation_id=generation_id,
             session_id=session_id,
@@ -105,8 +117,11 @@ class DynamicPresentationService:
             award_groups=award_groups,
             download_url=f"/api/generations/{generation_id}/download",
             pptx_path=str(dest_pptx_path),
-            is_valid=all(f.severity != "ERROR" for f in findings),
+            is_valid=not has_critical_error,
             validation_findings=findings,
+            rendered_slide_urls=rendered_slide_urls,
+            delivery_status=delivery_status,
+            can_download=can_download,
             created_at=now_iso,
         )
 
@@ -115,13 +130,14 @@ class DynamicPresentationService:
             "generation_id": generation_id,
             "session_id": session_id,
             "status": "completed",
-            "delivery_status": "READY",
-            "validation_status": "VERIFIED",
+            "delivery_status": delivery_status,
+            "validation_status": "VERIFIED" if not has_critical_error else "FAILED",
             "slide_count": len(prs.slides),
             "record_count": len(employees),
             "award_categories_count": len(award_groups),
             "created_at": now_iso,
             "download_url": f"/api/generations/{generation_id}/download",
+            "rendered_slide_urls": rendered_slide_urls,
         }
         atomic_write_json(job_meta_path, meta_data)
 
