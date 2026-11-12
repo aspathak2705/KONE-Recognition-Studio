@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     STORAGE_DIR: Path = BASE_DIR / "storage"
     EXCEL_UPLOADS_DIR: Path = STORAGE_DIR / "uploads" / "excel"
     TEMPLATE_UPLOADS_DIR: Path = STORAGE_DIR / "uploads" / "templates"
+    PHOTO_SESSIONS_DIR: Path = STORAGE_DIR / "photo_sessions"
     GENERATED_OUTPUTS_DIR: Path = STORAGE_DIR / "generated"
 
     MAX_UPLOAD_SIZE_MB: int = 20

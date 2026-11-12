@@ -1,783 +1,497 @@
-import { useState, useEffect } from "react";
-import { FileUpload } from "../components/FileUpload";
+import React, { useState, useRef } from "react";
 import {
-  ExcelValidationResponse,
-  TemplateMetadata,
-  GenerationResponse,
-  FidelityValidationReport,
-} from "../types/recognition";
-import {
-  uploadAndValidateExcel,
-  fetchRegisteredTemplates,
-  generatePresentation,
-  getDownloadUrl,
-  fetchGenerationValidation,
-} from "../services/api";
-import {
-  FileSpreadsheet,
-  CheckCircle2,
-  AlertTriangle,
-  Download,
-  Award,
-  RefreshCw,
-  ArrowRight,
-  Plus,
-  Sparkles,
-  Image as ImageIcon,
-  ShieldCheck,
-  ShieldAlert,
-  XCircle,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+  PhotoMatchingSessionResponse,
+  EmployeePhotoMatch,
+  PhotoMatchStatus,
+  PhotoFileMetadata,
+} from "../types/photo_matching";
 
-interface CreatePresentationProps {
-  onNavigateToTemplates?: () => void;
-}
-
-export function CreatePresentation({ onNavigateToTemplates }: CreatePresentationProps) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-
-  // Step 1: Master Template Selection
-  const [templates, setTemplates] = useState<TemplateMetadata[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateMetadata | null>(null);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
-
-  // Step 2: Excel Recognition Data
-  const [excelResult, setExcelResult] = useState<ExcelValidationResponse | null>(null);
-  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
-
-  // Step 3 & 4: Generation Lifecycle State Machine
-  const [generationStage, setGenerationStage] = useState<"IDLE" | "GENERATING" | "VERIFYING" | "COMPLETED" | "ERROR">("IDLE");
-  const [genResponse, setGenResponse] = useState<GenerationResponse | null>(null);
-  const [validationReport, setValidationReport] = useState<FidelityValidationReport | null>(null);
-  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+export function CreatePresentation() {
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [session, setSession] = useState<PhotoMatchingSessionResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isFinalized, setIsFinalized] = useState(false);
+  const [activeTab, setActiveTab] = useState<"all" | "attention" | "unmatched">("all");
 
-  useEffect(() => {
-    loadTemplates();
-  }, []);
+  const dirInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
-  const loadTemplates = async () => {
-    setIsLoadingTemplates(true);
-    try {
-      const data = await fetchRegisteredTemplates(false);
-      setTemplates(data);
-      if (data.length > 0 && !selectedTemplate) {
-        const ready = data.find((t) => t.generation_readiness === "ready_for_generation") || data[0];
-        setSelectedTemplate(ready);
-      }
-    } catch {
-      // Ignore initial load error
-    } finally {
-      setIsLoadingTemplates(false);
+  const handleDirectorySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArr = Array.from(e.target.files).filter((f) =>
+        /\.(jpe?g|png|webp)$/i.test(f.name)
+      );
+      setPhotoFiles(filesArr);
+      setZipFile(null);
     }
   };
 
-  const handleExcelSelect = async (file: File) => {
-    setIsUploadingExcel(true);
-    setErrorMsg(null);
-    try {
-      const res = await uploadAndValidateExcel(file);
-      setExcelResult(res);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to upload Excel file.");
-      setExcelResult(null);
-    } finally {
-      setIsUploadingExcel(false);
+  const handleZipSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setZipFile(e.target.files[0]);
+      setPhotoFiles([]);
     }
   };
 
-  const handleGenerate = async () => {
-    if (!excelResult?.file_id || !selectedTemplate) {
-      setErrorMsg("Please select a master template and provide recognition Excel data.");
+  const handleProcess = async () => {
+    if (!excelFile) {
+      setErrorMsg("Please upload the employee recognition Excel workbook.");
+      return;
+    }
+    if (photoFiles.length === 0 && !zipFile) {
+      setErrorMsg("Please select a photographs folder or upload a ZIP archive of photographs.");
       return;
     }
 
-    setGenerationStage("GENERATING");
+    setIsProcessing(true);
     setErrorMsg(null);
-    setValidationReport(null);
-    setShowTechnicalDetails(false);
-    setStep(4);
+
+    const formData = new FormData();
+    formData.append("excel_file", excelFile);
+    if (zipFile) {
+      formData.append("photo_zip", zipFile);
+    } else {
+      photoFiles.forEach((f) => formData.append("photo_files", f));
+    }
 
     try {
-      const res = await generatePresentation({
-        excel_file_id: excelResult.file_id,
-        template_file_id: selectedTemplate.template_id,
-        template_version: selectedTemplate.current_version,
+      const res = await fetch("/api/photos/process-dataset", {
+        method: "POST",
+        body: formData,
       });
-      setGenResponse(res);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Failed to process dataset.");
+      }
+      const data: PhotoMatchingSessionResponse = await res.json();
+      setSession(data);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
-      // Transition to verification stage
-      setGenerationStage("VERIFYING");
+  const handleResolve = async (
+    employeeIndex: number,
+    fileId: string | null,
+    confirmReuse: boolean = false
+  ) => {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/photos/${session.session_id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employee_record_index: employeeIndex,
+          file_id: fileId,
+          confirm_reuse: confirmReuse,
+        }),
+      });
 
-      try {
-        const valReport = await fetchGenerationValidation(res.generation_id);
-        setValidationReport(valReport);
-      } catch {
-        // If validation endpoint fails to return, preserve response validation_status
+      if (!res.ok) {
+        const err = await res.json();
+        if (err.detail && err.detail.includes("CONFIRMATION_REQUIRED")) {
+          const userConfirmed = window.confirm(
+            `${err.detail}\n\nDo you want to confirm explicit reuse of this photograph for multiple employees?`
+          );
+          if (userConfirmed) {
+            await handleResolve(employeeIndex, fileId, true);
+          }
+          return;
+        }
+        throw new Error(err.detail || "Failed to resolve association.");
       }
 
-      setGenerationStage("COMPLETED");
+      const updated: PhotoMatchingSessionResponse = await res.json();
+      setSession(updated);
     } catch (err: any) {
-      setErrorMsg(err.message || "Presentation generation failed.");
-      setGenResponse(null);
-      setGenerationStage("ERROR");
+      alert(`Error: ${err.message}`);
     }
   };
 
-  const getFriendlyFailureReason = (failureType: string, msg: string): string => {
-    switch (failureType) {
-      case "MISSING_PHOTO_REGION":
-        return "A photo region was not preserved in the presentation.";
-      case "MISSING_STATIC_ASSET":
-        return "Some template graphics or static layout elements were missing.";
-      case "GEOMETRY_DEVIATION":
-        return "An employee card or shape was displaced beyond acceptable layout boundaries.";
-      case "SEMANTIC_PLACEMENT_ERROR":
-        return "Some employee information was placed in the wrong card field.";
-      case "DIMENSION_MISMATCH":
-        return "Presentation slide dimensions differ from master template specifications.";
-      case "BLANK_RENDERED_SLIDE":
-        return "One or more slides rendered blank despite containing employee cards.";
-      case "RENDERED_SLIDE_UNREADABLE":
-        return "One or more slides could not be rendered as readable PowerPoint slides.";
+  const handleFinalize = async () => {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/photos/${session.session_id}/finalize`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Cannot finalize dataset.");
+      }
+      setIsFinalized(true);
+      alert("Dataset verified and ready for Phase 2 presentation generation!");
+    } catch (err: any) {
+      alert(`Finalization blocked: ${err.message}`);
+    }
+  };
+
+  const statusBadge = (status: PhotoMatchStatus, isReused: boolean) => {
+    switch (status) {
+      case "MATCHED":
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+            Matched {isReused ? "(Reused)" : ""}
+          </span>
+        );
+      case "MISSING":
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+            Missing
+          </span>
+        );
+      case "AMBIGUOUS":
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+            Ambiguous (Multiple Files)
+          </span>
+        );
+      case "DUPLICATE_EMPLOYEE_NAME":
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+            Duplicate Name Conflict
+          </span>
+        );
       default:
-        return msg || "The generated presentation differs from the selected template.";
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+            {status}
+          </span>
+        );
     }
   };
 
-  const activeVersion = selectedTemplate?.versions.find(
-    (v) => v.version_number === selectedTemplate.current_version
-  );
-  const capacities = selectedTemplate?.supported_capacities || activeVersion?.supported_capacities || [1];
-  const maxCap = Math.max(...capacities);
-  const numEmployees = excelResult?.valid_rows || 0;
-  const estSlides = numEmployees > 0 ? Math.ceil(numEmployees / maxCap) : 1;
+  const attentionMatches = session
+    ? session.employee_matches.filter((m) => m.match_status !== "MATCHED" || !m.assigned_file)
+    : [];
+
+  const displayedMatches = session
+    ? activeTab === "attention"
+      ? attentionMatches
+      : session.employee_matches
+    : [];
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
-      {/* Wizard Progress Bar */}
-      <div className="rounded-lg border border-border bg-card p-4 shadow-xs">
-        <div className="grid grid-cols-4 gap-2 text-center text-xs font-semibold">
-          {[
-            { s: 1, label: "1. Master Template" },
-            { s: 2, label: "2. Recognition Data" },
-            { s: 3, label: "3. Review & Confirm" },
-            { s: 4, label: "4. Presentation Output" },
-          ].map((item) => {
-            const isActive = step === item.s;
-            const isDone = step > item.s;
-            return (
-              <div
-                key={item.s}
-                className={`py-2 px-3 rounded-md transition-all ${
-                  isActive
-                    ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                    : isDone
-                    ? "bg-primary/10 text-primary"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {item.label}
-              </div>
-            );
-          })}
-        </div>
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">
+          Employee Recognition Studio — Input & Photo Matching
+        </h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Upload employee recognition records and photo folder to intelligently match photographs.
+        </p>
       </div>
 
       {errorMsg && (
-        <div className="flex items-center gap-2 rounded-md bg-destructive/10 p-4 text-xs text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>{errorMsg}</span>
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+          {errorMsg}
         </div>
       )}
 
-      {/* STEP 1: Select Master Template */}
-      {step === 1 && (
-        <div className="rounded-lg border border-border bg-card p-6 space-y-6 shadow-xs">
-          <div className="flex items-center justify-between border-b border-border pb-4">
-            <div>
-              <h3 className="text-lg font-bold text-foreground">Step 1 — Select Master Template</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Choose the official KONE PowerPoint template for your recognition presentation.
-              </p>
-            </div>
-            {onNavigateToTemplates && (
-              <button
-                onClick={onNavigateToTemplates}
-                className="inline-flex items-center gap-1.5 text-xs text-primary font-medium hover:underline cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" /> Manage Template Library
-              </button>
+      {!session ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-lg shadow border border-gray-200">
+          {/* Step 1: Excel Upload */}
+          <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
+            <h3 className="text-base font-semibold text-gray-800 mb-2">
+              1. Employee Recognition Excel
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Required headers: Employee Name, Award Name. Optional: Designation, Branch.
+            </p>
+            <input
+              type="file"
+              ref={excelInputRef}
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => e.target.files && setExcelFile(e.target.files[0])}
+            />
+            <button
+              type="button"
+              onClick={() => excelInputRef.current?.click()}
+              className="px-4 py-2 bg-blue-600 text-white rounded font-medium text-sm hover:bg-blue-700"
+            >
+              Select Excel File
+            </button>
+            {excelFile && (
+              <div className="mt-3 text-xs text-green-700 font-medium">
+                Selected: {excelFile.name} ({(excelFile.size / 1024).toFixed(1)} KB)
+              </div>
             )}
           </div>
 
-          {isLoadingTemplates ? (
-            <div className="flex items-center justify-center p-8 text-xs text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading registered templates...
-            </div>
-          ) : templates.length === 0 ? (
-            <div className="p-8 border border-dashed border-border rounded-lg text-center space-y-3">
-              <FileSpreadsheet className="h-8 w-8 text-muted-foreground mx-auto" />
-              <p className="text-sm font-medium text-foreground">No Registered Templates Found</p>
-              <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                No PowerPoint master templates are currently registered in the library. Please add a template first.
-              </p>
-              {onNavigateToTemplates && (
-                <button
-                  onClick={onNavigateToTemplates}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Template to Library
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {templates.map((tpl) => {
-                const isSelected = selectedTemplate?.template_id === tpl.template_id;
-                const isReady = tpl.generation_readiness === "ready_for_generation";
-                const caps = tpl.supported_capacities || [1];
+          {/* Step 2: Photo Folder Upload */}
+          <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
+            <h3 className="text-base font-semibold text-gray-800 mb-2">
+              2. Employee Photographs Folder
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Select an entire directory of photos named "Employee Name.jpg/png" or a ZIP archive.
+            </p>
+            <div className="flex justify-center gap-3">
+              {/* Directory input */}
+              <input
+                type="file"
+                ref={dirInputRef}
+                multiple
+                // @ts-ignore
+                webkitdirectory=""
+                // @ts-ignore
+                directory=""
+                className="hidden"
+                onChange={handleDirectorySelect}
+              />
+              <button
+                type="button"
+                onClick={() => dirInputRef.current?.click()}
+                className="px-4 py-2 bg-gray-800 text-white rounded font-medium text-sm hover:bg-gray-900"
+              >
+                Select Photo Folder
+              </button>
 
-                return (
+              {/* ZIP fallback */}
+              <input
+                type="file"
+                ref={zipInputRef}
+                accept=".zip"
+                className="hidden"
+                onChange={handleZipSelect}
+              />
+              <button
+                type="button"
+                onClick={() => zipInputRef.current?.click()}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded font-medium text-sm hover:bg-gray-300"
+              >
+                Upload ZIP Archive
+              </button>
+            </div>
+            {photoFiles.length > 0 && (
+              <div className="mt-3 text-xs text-green-700 font-medium">
+                Selected {photoFiles.length} photo(s) from folder
+              </div>
+            )}
+            {zipFile && (
+              <div className="mt-3 text-xs text-green-700 font-medium">
+                Selected ZIP: {zipFile.name} ({(zipFile.size / (1024 * 1024)).toFixed(2)} MB)
+              </div>
+            )}
+          </div>
+
+          <div className="col-span-full pt-4 border-t flex justify-end">
+            <button
+              onClick={handleProcess}
+              disabled={isProcessing || !excelFile || (photoFiles.length === 0 && !zipFile)}
+              className="px-6 py-2.5 bg-blue-600 text-white rounded font-semibold text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              {isProcessing ? "Processing & Matching Photos..." : "Match Photos & Review"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Summary Banner */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 bg-white p-4 rounded-lg shadow border border-gray-200 text-center">
+            <div className="p-2">
+              <div className="text-xl font-bold text-gray-800">{session.total_employees}</div>
+              <div className="text-xs text-gray-500 uppercase">Total Employees</div>
+            </div>
+            <div className="p-2">
+              <div className="text-xl font-bold text-green-600">{session.matched_count}</div>
+              <div className="text-xs text-gray-500 uppercase">Matched</div>
+            </div>
+            <div className="p-2">
+              <div className="text-xl font-bold text-red-600">{session.missing_count}</div>
+              <div className="text-xs text-gray-500 uppercase">Missing</div>
+            </div>
+            <div className="p-2">
+              <div className="text-xl font-bold text-yellow-600">{session.ambiguous_count}</div>
+              <div className="text-xs text-gray-500 uppercase">Ambiguous</div>
+            </div>
+            <div className="p-2">
+              <div className="text-xl font-bold text-orange-600">{session.duplicate_name_count}</div>
+              <div className="text-xs text-gray-500 uppercase">Name Conflicts</div>
+            </div>
+            <div className="p-2">
+              <div className="text-xl font-bold text-gray-600">{session.unmatched_files_count}</div>
+              <div className="text-xs text-gray-500 uppercase">Unmatched Photos</div>
+            </div>
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex justify-between items-center border-b border-gray-200">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setActiveTab("all")}
+                className={`py-2 px-3 text-sm font-medium border-b-2 ${
+                  activeTab === "all"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                All Employees ({session.employee_matches.length})
+              </button>
+              <button
+                onClick={() => setActiveTab("attention")}
+                className={`py-2 px-3 text-sm font-medium border-b-2 ${
+                  activeTab === "attention"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Needs Attention ({attentionMatches.length})
+              </button>
+              <button
+                onClick={() => setActiveTab("unmatched")}
+                className={`py-2 px-3 text-sm font-medium border-b-2 ${
+                  activeTab === "unmatched"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Unmatched Files ({session.unmatched_files.length})
+              </button>
+            </div>
+
+            <div>
+              <button
+                onClick={handleFinalize}
+                disabled={!session.is_dataset_ready || isFinalized}
+                className="px-5 py-2 bg-green-600 text-white rounded font-medium text-sm hover:bg-green-700 disabled:opacity-40"
+              >
+                {isFinalized
+                  ? "✓ Dataset Finalized"
+                  : session.is_dataset_ready
+                  ? "Finalize Dataset for Presentation"
+                  : `Blocked (${attentionMatches.length} issues remaining)`}
+              </button>
+            </div>
+          </div>
+
+          {/* Table / Review List */}
+          {activeTab === "unmatched" ? (
+            <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+              <div className="p-4 bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
+                Uploaded Photographs Not Associated With Any Employee
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 p-4">
+                {session.unmatched_files.map((file) => (
                   <div
-                    key={tpl.template_id}
-                    onClick={() => isReady && setSelectedTemplate(tpl)}
-                    className={`p-4 rounded-lg border text-left cursor-pointer transition-all ${
-                      isSelected
-                        ? "border-primary bg-primary/5 ring-1 ring-primary shadow-xs"
-                        : !isReady
-                        ? "border-border bg-muted/30 opacity-60 cursor-not-allowed"
-                        : "border-border bg-card hover:bg-muted/40"
-                    }`}
+                    key={file.file_id}
+                    className="border rounded p-2 text-center bg-gray-50 flex flex-col items-center"
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="font-bold text-sm text-foreground">{tpl.name}</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          v{tpl.current_version} • Aspect Ratio {tpl.aspect_ratio}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Capacities: {caps.join(", ")} per slide
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
-                          isReady ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
-                        }`}
-                      >
-                        {isReady ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                        {isReady ? "Ready" : "Under Review"}
-                      </span>
+                    <img
+                      src={file.preview_url}
+                      alt={file.original_filename}
+                      className="w-20 h-20 object-cover rounded mb-2 border"
+                    />
+                    <div className="text-xs font-medium text-gray-800 truncate w-full" title={file.original_filename}>
+                      {file.original_filename}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {file.width}×{file.height} | {(file.file_size_bytes / 1024).toFixed(0)} KB
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="flex items-center justify-end pt-4 border-t border-border">
-            <button
-              onClick={() => setStep(2)}
-              disabled={!selectedTemplate || selectedTemplate.generation_readiness !== "ready_for_generation"}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
-            >
-              Continue to Recognition Data <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 2: Recognition Data Upload */}
-      {step === 2 && (
-        <div className="rounded-lg border border-border bg-card p-6 space-y-6 shadow-xs">
-          <div className="border-b border-border pb-4">
-            <h3 className="text-lg font-bold text-foreground">Step 2 — Upload Recognition Data</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Upload recognition Excel data sheet (`.xlsx`) matching template requirements.
-            </p>
-          </div>
-
-          <FileUpload
-            accept=".xlsx"
-            acceptLabel="Excel files (.xlsx) up to 20MB"
-            onFileSelect={handleExcelSelect}
-            isLoading={isUploadingExcel}
-          />
-
-          {excelResult && (
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between p-4 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-600">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 shrink-0" />
-                  <div>
-                    <p className="font-bold text-sm">{excelResult.filename} Validated</p>
-                    <p className="text-xs">
-                      {excelResult.valid_rows} recognition records ready for presentation generation.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Detected Excel Columns */}
-              {excelResult.detected_columns && excelResult.detected_columns.length > 0 && (
-                <div className="p-3 rounded-md border border-border bg-muted/20 space-y-1.5">
-                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Detected Data Columns:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {excelResult.detected_columns.map((col) => (
-                      <span
-                        key={col}
-                        className="px-2 py-0.5 rounded text-[11px] bg-background border border-border font-mono text-foreground"
-                      >
-                        {col}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-4 border-t border-border">
-            <button
-              onClick={() => setStep(1)}
-              className="rounded-md border border-border bg-card px-4 py-2 text-xs font-medium text-foreground hover:bg-muted cursor-pointer"
-            >
-              Back to Template
-            </button>
-
-            <button
-              onClick={() => setStep(3)}
-              disabled={!excelResult || excelResult.valid_rows === 0}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
-            >
-              Review Presentation <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 3: Dynamic Review & Confirm */}
-      {step === 3 && (
-        <div className="rounded-lg border border-border bg-card p-6 space-y-6 shadow-xs">
-          <div className="border-b border-border pb-4">
-            <h3 className="text-lg font-bold text-foreground">Step 3 — Review & Confirm Presentation</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Confirm your master template and recognition dataset before generating the PowerPoint file.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Template Summary */}
-            <div className="p-4 rounded-lg border border-border bg-muted/20 space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">PowerPoint Master</p>
-              <div>
-                <p className="text-sm font-bold text-foreground">{selectedTemplate?.name}</p>
-                <p className="text-xs text-muted-foreground">Version {selectedTemplate?.current_version} ({selectedTemplate?.aspect_ratio})</p>
-              </div>
-
-              <div className="text-xs border-t border-border/50 pt-2 space-y-1">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span>Supported Slide Capacities:</span>
-                  <span className="font-semibold text-foreground">{capacities.join(", ")}</span>
-                </div>
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span>Estimated Slide Count:</span>
-                  <span className="font-bold text-primary">~{estSlides} Content Slide(s)</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Excel Data Summary */}
-            <div className="p-4 rounded-lg border border-border bg-muted/20 space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recognition Dataset</p>
-              <div>
-                <p className="text-sm font-bold text-foreground truncate">{excelResult?.filename}</p>
-                <p className="text-xs text-emerald-600 font-medium mt-0.5 flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {excelResult?.valid_rows} Employees Validated
-                </p>
-              </div>
-
-              <div className="text-xs border-t border-border/50 pt-2 space-y-1">
-                <span className="text-muted-foreground font-medium">Mapped Recognition Fields:</span>
-                <div className="space-y-0.5 text-[11px] font-mono text-foreground">
-                  <div>Employee Name ← Name / Employee Name</div>
-                  <div>Designation ← Role / Job Title</div>
-                  <div>Branch ← Location / Branch</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Photo Note */}
-          <div className="flex items-center gap-2.5 p-3 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-600 text-xs">
-            <ImageIcon className="h-4 w-4 shrink-0" />
-            <span>
-              <strong>Sample portraits cleared:</strong> Generated presentation leaves photo regions empty and ready for manual HR portrait insertion.
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-border">
-            <button
-              onClick={() => setStep(2)}
-              className="rounded-md border border-border bg-card px-4 py-2 text-xs font-medium text-foreground hover:bg-muted cursor-pointer"
-            >
-              Back to Data Upload
-            </button>
-
-            <button
-              onClick={handleGenerate}
-              disabled={generationStage === "GENERATING" || generationStage === "VERIFYING"}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
-            >
-              {generationStage === "GENERATING" ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" /> Generating presentation...
-                </>
-              ) : generationStage === "VERIFYING" ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" /> Validating presentation fidelity...
-                </>
-              ) : (
-                <>
-                  <Award className="h-4 w-4" /> Generate Presentation
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 4: Generation / Verification / Output */}
-      {step === 4 && (
-        <div className="rounded-lg border border-border bg-card p-8 text-center space-y-6 shadow-xs">
-          {/* 1. In-Progress States: GENERATING or VERIFYING */}
-          {(generationStage === "GENERATING" || generationStage === "VERIFYING") && (
-            <div className="py-8 space-y-4">
-              <div className="h-16 w-16 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
-                <RefreshCw className="h-8 w-8 animate-spin" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-foreground">
-                  {generationStage === "GENERATING"
-                    ? "Generating presentation..."
-                    : "Validating presentation fidelity..."}
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                  {generationStage === "GENERATING"
-                    ? "Populating recognition records and copying master template layout elements..."
-                    : "Performing automated structural, geometry, and asset fidelity verification against master template..."}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* 2. Error State: Generation / Network Error */}
-          {generationStage === "ERROR" && (
-            <div className="space-y-6">
-              <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
-                <XCircle className="h-8 w-8" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-foreground">Generation Encountered an Error</h3>
-                <p className="text-xs text-rose-600 mt-1 max-w-lg mx-auto">
-                  {errorMsg || "An unexpected error occurred during presentation generation or verification."}
-                </p>
-              </div>
-              <div className="pt-2 flex justify-center gap-4">
-                <button
-                  onClick={() => setStep(3)}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 cursor-pointer"
-                >
-                  Return to Review
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* 3. Completed State: VERIFIED or BLOCKED */}
-          {generationStage === "COMPLETED" && genResponse && (
-            <div className="space-y-6">
-              {(() => {
-                const deliveryStatus = genResponse.delivery_status || (genResponse.validation_status === "VERIFIED" ? "READY" : "BLOCKED");
-                const isReady = deliveryStatus === "READY";
-                const isWarning = deliveryStatus === "READY_WITH_WARNING";
-                const isRepairPending = deliveryStatus === "REPAIR_PENDING";
-
-                if (isReady) {
-                  return (
-                    <>
-                      <div className="h-14 w-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto">
-                        <ShieldCheck className="h-8 w-8" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-foreground">Presentation is ready</h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Generated presentation containing {genResponse.slide_count} slides for {genResponse.record_count} recognition records.
-                        </p>
-                      </div>
-
-                      {/* Clean HR-friendly Verified Checklist */}
-                      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 max-w-md mx-auto text-left space-y-2.5">
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>Presentation generated successfully</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>Template layout structure verified</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>Formatting & element geometry verified</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>Template graphics & branding preserved</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>Employee information verified</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>Photo regions preserved for manual portrait placement</span>
-                        </div>
-                        {validationReport?.repair_record?.outcome === "SUCCESS" && (
-                          <div className="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-400 pt-1 border-t border-emerald-500/10">
-                            <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" />
-                            <span>Automatically repaired minor layout alignment & re-verified</span>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                } else if (isWarning) {
-                  return (
-                    <>
-                      <div className="h-14 w-14 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
-                        <AlertTriangle className="h-8 w-8" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-foreground">Presentation is ready with minor quality warnings</h3>
-                        <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                          Presentation generated safely ({genResponse.slide_count} slides). A non-critical quality discrepancy was detected, but the presentation is safe and usable.
-                        </p>
-                      </div>
-
-                      {validationReport?.warnings && validationReport.warnings.length > 0 && (
-                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 max-w-md mx-auto text-left space-y-1.5">
-                          <div className="text-xs font-bold text-amber-700 dark:text-amber-400">Quality Notice:</div>
-                          {validationReport.warnings.slice(0, 2).map((w, idx) => (
-                            <div key={idx} className="text-xs text-amber-600 flex items-start gap-1.5">
-                              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                              <span>{w}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  );
-                } else if (isRepairPending) {
-                  return (
-                    <>
-                      <div className="h-14 w-14 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center mx-auto">
-                        <RefreshCw className="h-8 w-8" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-foreground">Action Needed Before Download</h3>
-                        <p className="text-xs text-muted-foreground mt-1 max-w-lg mx-auto">
-                          We found an issue that needs to be resolved before this presentation can be downloaded.
-                        </p>
-                      </div>
-
-                      {validationReport?.failures && validationReport.failures.length > 0 && (
-                        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 max-w-md mx-auto text-left space-y-1.5">
-                          <div className="text-xs font-bold text-blue-700 dark:text-blue-400">Identified Item:</div>
-                          {validationReport.failures.slice(0, 2).map((f, idx) => (
-                            <div key={idx} className="text-xs text-blue-600 flex items-start gap-1.5">
-                              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                              <span>Slide {f.slide_number}: {getFriendlyFailureReason(f.failure_type, f.message)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  );
-                } else {
-                  return (
-                    <>
-                      <div className="h-14 w-14 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
-                        <ShieldAlert className="h-8 w-8" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-foreground">We couldn't safely prepare this presentation</h3>
-                        <p className="text-xs text-rose-600 mt-1 max-w-lg mx-auto">
-                          A critical fidelity issue makes this output unsafe or incomplete. Download is blocked to protect presentation quality.
-                        </p>
-                      </div>
-
-                      {/* Clean HR-friendly Blocked Reasons */}
-                      <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 max-w-md mx-auto text-left space-y-2">
-                        <div className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">
-                          Identified Defect:
-                        </div>
-                        {validationReport?.failures && validationReport.failures.length > 0 ? (
-                          validationReport.failures.slice(0, 2).map((f, idx) => (
-                            <div key={idx} className="flex items-start gap-2 text-xs text-rose-600">
-                              <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
-                              <span>Slide {f.slide_number}: {getFriendlyFailureReason(f.failure_type, f.message)}</span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="flex items-start gap-2 text-xs text-rose-600">
-                            <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
-                            <span>The generated presentation differs from the selected template.</span>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                }
-              })()}
-
-              {/* Collapsible Verification Details (High-level checks) */}
-              {validationReport && (
-                <div className="max-w-xl mx-auto pt-2">
-                  <button
-                    onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    {showTechnicalDetails ? (
-                      <>
-                        <EyeOff className="h-3.5 w-3.5" /> Hide verification details
-                      </>
-                    ) : (
-                      <>
-                        <Eye className="h-3.5 w-3.5" /> View verification details
-                      </>
-                    )}
-                  </button>
-
-                  {showTechnicalDetails && (
-                    <div className="mt-3 rounded-md border border-border bg-muted/40 p-4 text-left space-y-3">
-                      <div className="flex items-center justify-between text-xs font-semibold text-foreground border-b border-border/50 pb-2">
-                        <span>Fidelity Verification Status</span>
-                        <span
-                          className={
-                            (genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || genResponse.validation_status === "VERIFIED")
-                              ? "text-emerald-600 font-bold"
-                              : "text-rose-600 font-bold"
-                          }
-                        >
-                          {genResponse.delivery_status || validationReport.verification_status} ({validationReport.slides_passed}/{validationReport.slides_checked} slides passed)
-                        </span>
-                      </div>
-
-                      {/* Generic Validation Categories Rendered Dynamically */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
-                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
-                          <span className="text-muted-foreground">Layout</span>
-                          <span className={`font-semibold ${validationReport.structural_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {validationReport.structural_result}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
-                          <span className="text-muted-foreground">Formatting</span>
-                          <span className={`font-semibold ${validationReport.geometry_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {validationReport.geometry_result}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
-                          <span className="text-muted-foreground">Graphics</span>
-                          <span className={`font-semibold ${validationReport.static_asset_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {validationReport.static_asset_result}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
-                          <span className="text-muted-foreground">Employee Info</span>
-                          <span className={`font-semibold ${validationReport.semantic_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {validationReport.semantic_result}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
-                          <span className="text-muted-foreground">Photo Regions</span>
-                          <span className={`font-semibold ${validationReport.photo_slot_result === "PASS" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {validationReport.photo_slot_result}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/40">
-                          <span className="text-muted-foreground">Visual Fidelity</span>
-                          <span className={`font-semibold ${
-                            validationReport.visual_result === "PASS" 
-                              ? "text-emerald-600" 
-                              : (validationReport.visual_result === "UNAVAILABLE" ? "text-muted-foreground" : "text-amber-600")
-                          }`}>
-                            {validationReport.visual_result}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Action Buttons: Gated Download */}
-              <div className="pt-4 flex flex-col items-center gap-4 border-t border-border">
-                <div className="flex justify-center gap-4 w-full">
-                  {(genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || (!genResponse.delivery_status && genResponse.validation_status === "VERIFIED")) ? (
-                    <a
-                      href={getDownloadUrl(genResponse.generation_id)}
-                      download
-                      className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
-                    >
-                      <Download className="h-4 w-4" /> Download Presentation (.pptx)
-                    </a>
-                  ) : (
-                    <button
-                      disabled
-                      className="inline-flex items-center gap-2 rounded-md bg-muted px-6 py-3 text-sm font-bold text-muted-foreground cursor-not-allowed border border-border"
-                      title={
-                        genResponse.delivery_status === "REPAIR_PENDING"
-                          ? "Download pending: issue resolution required"
-                          : "Download blocked: critical fidelity defect detected"
-                      }
-                    >
-                      <Download className="h-4 w-4" /> Download Blocked
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => {
-                      setStep(1);
-                      setExcelResult(null);
-                      setGenResponse(null);
-                      setValidationReport(null);
-                      setGenerationStage("IDLE");
-                    }}
-                    className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
-                  >
-                    Create Another Presentation
-                  </button>
-                </div>
-
-                {/* Step 7: Post-download manual portrait insertion guidance */}
-                {(genResponse.delivery_status === "READY" || genResponse.delivery_status === "READY_WITH_WARNING" || (!genResponse.delivery_status && genResponse.validation_status === "VERIFIED")) && (
-                  <div className="flex items-center gap-2.5 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs max-w-xl text-left">
-                    <ImageIcon className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
-                    <div>
-                      <p className="font-semibold">Next Step: Add Employee Portraits in PowerPoint</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Open the downloaded presentation in Microsoft PowerPoint. Photo frames are preserved across all slides so you can easily paste or insert each employee's photo directly.
-                      </p>
-                    </div>
+                ))}
+                {session.unmatched_files.length === 0 && (
+                  <div className="col-span-full py-8 text-center text-sm text-gray-500">
+                    No unmatched photograph files.
                   </div>
                 )}
               </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase">
+                  <tr>
+                    <th className="px-4 py-3">Photo</th>
+                    <th className="px-4 py-3">Employee Details</th>
+                    <th className="px-4 py-3">Award Category</th>
+                    <th className="px-4 py-3">Matching Status</th>
+                    <th className="px-4 py-3">Photo Filename</th>
+                    <th className="px-4 py-3 text-right">Actions / Resolve</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 text-sm">
+                  {displayedMatches.map((match) => (
+                    <tr
+                      key={match.employee_record_index}
+                      className={match.is_resolved ? "hover:bg-gray-50" : "bg-red-50/40 hover:bg-red-50"}
+                    >
+                      {/* Photo Thumbnail */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {match.assigned_file ? (
+                          <img
+                            src={match.assigned_file.preview_url}
+                            alt={match.employee_name}
+                            className="w-12 h-12 object-cover rounded border border-gray-300"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded bg-gray-100 border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
+                            No Photo
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Employee Info */}
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900">{match.employee_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {match.designation || "—"} {match.branch ? `• ${match.branch}` : ""}
+                        </div>
+                      </td>
+
+                      {/* Award */}
+                      <td className="px-4 py-3 text-gray-700">{match.award_name}</td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3">
+                        <div>{statusBadge(match.match_status, match.is_reused_override)}</div>
+                        {match.issue_message && (
+                          <div className="text-xs text-red-600 mt-1 max-w-xs">{match.issue_message}</div>
+                        )}
+                      </td>
+
+                      {/* Associated Filename */}
+                      <td className="px-4 py-3 text-xs font-mono text-gray-600">
+                        {match.assigned_file ? match.assigned_file.original_filename : "—"}
+                      </td>
+
+                      {/* Actions dropdown */}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <select
+                          className="text-xs border rounded p-1 bg-white"
+                          value={match.assigned_file ? match.assigned_file.file_id : ""}
+                          onChange={(e) =>
+                            handleResolve(
+                              match.employee_record_index,
+                              e.target.value ? e.target.value : null
+                            )
+                          }
+                        >
+                          <option value="">-- Assign Photo --</option>
+                          {session.all_valid_photos.map((p) => (
+                            <option key={p.file_id} value={p.file_id}>
+                              {p.original_filename}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                  {displayedMatches.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-8 text-sm text-gray-500">
+                        No employees found for this view.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

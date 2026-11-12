@@ -5,6 +5,7 @@ from app.api.health import router as health_router
 from app.api.excel import router as excel_router
 from app.api.templates import router as templates_router
 from app.api.generation import router as generation_router
+from app.api.photos import router as photos_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -24,4 +25,5 @@ app.include_router(health_router)
 app.include_router(excel_router)
 app.include_router(templates_router)
 app.include_router(generation_router)
+app.include_router(photos_router)
 
