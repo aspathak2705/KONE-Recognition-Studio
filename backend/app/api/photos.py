@@ -160,3 +160,35 @@ def finalize_dataset(session_id: str):
         ready_employees=session_res.employee_matches,
         manifest_saved_path=str(manifest_path),
     )
+
+
+@router.post("/{session_id}/generate-presentation")
+def generate_presentation_from_photo_session(session_id: str):
+    """
+    Phase 2 Dynamic Presentation Generator:
+    Takes a finalized photo session and dynamically builds a template-independent
+    editable PPTX presentation with intelligent award grouping and optimal card layout.
+    """
+    if not HEX_ID_PATTERN.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session identifier format.")
+
+    session_res, _ = PhotoMatchingService.load_session_state(session_id)
+    if not session_res:
+        raise HTTPException(status_code=404, detail="Photo matching session not found.")
+
+    if not session_res.is_dataset_ready:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot generate presentation: Dataset is not fully resolved. Every employee must have an assigned photograph.",
+        )
+
+    from app.services.dynamic_presentation_service import DynamicPresentationService
+    try:
+        gen_res = DynamicPresentationService.generate_presentation_from_dataset(
+            session_id=session_id,
+            employees=session_res.employee_matches,
+        )
+        return gen_res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dynamic presentation generation failed: {str(e)}")
+
