@@ -1,7 +1,7 @@
 import React from "react";
 import { LayoutDashboard, Award, FileSpreadsheet } from "lucide-react";
 
-export type NavTab = "dashboard" | "create" | "templates";
+export type NavTab = "dashboard" | "create";
 
 interface AppShellProps {
   activeTab: NavTab;
@@ -14,7 +14,6 @@ export function AppShell({ activeTab, setActiveTab, children, pageTitle }: AppSh
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "create", label: "Create Presentation", icon: Award },
-    { id: "templates", label: "Templates", icon: FileSpreadsheet },
   ];
 
   return (
