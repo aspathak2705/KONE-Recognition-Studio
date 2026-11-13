@@ -6,7 +6,7 @@ import zipfile
 import unicodedata
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.core.config import settings
 from app.services.file_storage import atomic_write_json
@@ -105,15 +105,42 @@ class PhotoMatchingService:
         is_valid, err_msg, width, height, fmt = inspect_and_validate_image_bytes(content, clean_name)
 
         if is_valid:
-            with open(dest_path, "wb") as f:
-                f.write(content)
+            try:
+                # Transpose EXIF orientation tags so photos never save rotated
+                with Image.open(io.BytesIO(content)) as raw_img:
+                    transposed_img = ImageOps.exif_transpose(raw_img)
+                    width, height = transposed_img.size
+
+                    # WEBP handling: PowerPoint desktop versions prior to Office 365
+                    # or certain native drivers do not support embedded WEBP directly.
+                    # Convert WEBP to PNG to guarantee 100% PowerPoint compatibility.
+                    if fmt == "WEBP" or ext == ".webp":
+                        ext = ".png"
+                        safe_disk_filename = f"{file_id}.png"
+                        dest_path = photos_dir / safe_disk_filename
+                        transposed_img.save(dest_path, format="PNG")
+                        fmt = "PNG"
+                    elif fmt in ("JPEG", "JPG") or ext in (".jpg", ".jpeg"):
+                        # Convert to RGB to safely drop any CMYK or invalid color spaces
+                        if transposed_img.mode != "RGB":
+                            transposed_img = transposed_img.convert("RGB")
+                        transposed_img.save(dest_path, format="JPEG", quality=95)
+                    elif fmt == "PNG" or ext == ".png":
+                        transposed_img.save(dest_path, format="PNG")
+                    else:
+                        with open(dest_path, "wb") as f:
+                            f.write(content)
+            except Exception as e:
+                # Fallback to direct write if transposition fails
+                with open(dest_path, "wb") as f:
+                    f.write(content)
 
         return PhotoFileMetadata(
             file_id=file_id,
             original_filename=clean_name,
             normalized_stem=normalized_stem,
             extension=ext,
-            file_size_bytes=len(content),
+            file_size_bytes=dest_path.stat().st_size if is_valid and dest_path.exists() else len(content),
             width=width,
             height=height,
             format=fmt,
