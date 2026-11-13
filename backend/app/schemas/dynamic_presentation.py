@@ -47,3 +47,22 @@ class DynamicGenerationResponse(BaseModel):
     delivery_status: str = "READY"
     can_download: bool = True
     created_at: str
+
+
+class PresentationHistoryItem(BaseModel):
+    generation_id: str
+    presentation_name: str
+    created_at: str
+    record_count: int
+    award_categories_count: int
+    slide_count: int
+    status: str
+    delivery_status: str
+    can_download: bool
+    download_url: str
+    rendered_slide_urls: List[str] = Field(default_factory=list)
+
+
+class PresentationHistoryResponse(BaseModel):
+    total_count: int
+    items: List[PresentationHistoryItem] = Field(default_factory=list)

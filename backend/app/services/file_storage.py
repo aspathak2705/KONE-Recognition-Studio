@@ -62,3 +62,24 @@ def atomic_write_json(target_path: Path, data: dict, indent: int = 2) -> None:
                 pass
         raise
 
+
+def read_json_safely(file_path: Path) -> dict:
+    """
+    Safely reads and parses a JSON file with retries in case of concurrent atomic replacement.
+    Returns empty dict if file is missing, empty, or unparseable.
+    """
+    import json
+    import time
+    p = Path(file_path)
+    if not p.exists():
+        return {}
+    for _ in range(3):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                content = f.read()
+                if not content:
+                    return {}
+                return json.loads(content)
+        except (json.JSONDecodeError, OSError):
+            time.sleep(0.05)
+    return {}

@@ -294,3 +294,81 @@ def get_rendered_slide(generation_id: str, filename: str):
     return FileResponse(path=target_path, media_type="image/png")
 
 
+from app.schemas.dynamic_presentation import PresentationHistoryItem, PresentationHistoryResponse
+from app.services.file_storage import read_json_safely
+import os
+import datetime
+
+
+@router.get("/api/generations/history", response_model=PresentationHistoryResponse)
+def get_presentation_history():
+    """
+    Returns persistent presentation generation history sorted in reverse chronological order.
+    Audits actual PPTX artifact presence on disk before setting can_download.
+    """
+    gen_dir = settings.GENERATED_OUTPUTS_DIR.resolve()
+    if not gen_dir.exists():
+        return PresentationHistoryResponse(total_count=0, items=[])
+
+    items: list[PresentationHistoryItem] = []
+    # Collect all job metadata JSON files (exclude validation report json files ending in _validation.json)
+    for json_file in gen_dir.glob("*.json"):
+        if json_file.name.endswith("_validation.json"):
+            continue
+        gen_id = json_file.stem
+        if not HEX_ID_PATTERN.match(gen_id):
+            continue
+
+        meta = read_json_safely(json_file)
+        if not meta or not isinstance(meta, dict):
+            continue
+
+        pptx_path = gen_dir / f"{gen_id}.pptx"
+        has_pptx = pptx_path.exists() and pptx_path.stat().st_size > 0
+
+        # Determine presentation name
+        record_count = meta.get("record_count", 0)
+        award_cats = meta.get("award_categories_count", 0)
+        pres_name = f"KONE Recognition ({record_count} Employees)" if record_count > 0 else f"KONE Recognition ({gen_id[:8]})"
+
+        # Determine slide renders
+        rendered_urls = meta.get("rendered_slide_urls", [])
+        if not rendered_urls:
+            render_dir = gen_dir / f"renders_{gen_id}"
+            if render_dir.exists():
+                render_files = sorted(render_dir.glob("*.png"))
+                rendered_urls = [f"/api/generations/{gen_id}/renders/{p.name}" for p in render_files]
+
+        # Delivery status & download eligibility
+        status = meta.get("status", "unknown")
+        raw_delivery = meta.get("delivery_status", "READY" if status == "completed" else "BLOCKED")
+        can_dl = bool(has_pptx and status == "completed" and raw_delivery in ("READY", "READY_WITH_WARNING"))
+
+        # Fallback created_at from file mtime if missing
+        created_at = meta.get("created_at")
+        if not created_at:
+            mtime = os.path.getmtime(json_file)
+            created_at = datetime.datetime.utcfromtimestamp(mtime).isoformat()
+
+        items.append(
+            PresentationHistoryItem(
+                generation_id=gen_id,
+                presentation_name=pres_name,
+                created_at=created_at,
+                record_count=record_count,
+                award_categories_count=award_cats,
+                slide_count=meta.get("slide_count", 0),
+                status=status,
+                delivery_status=raw_delivery if has_pptx else "ARTIFACT_MISSING",
+                can_download=can_dl,
+                download_url=f"/api/generations/{gen_id}/download",
+                rendered_slide_urls=rendered_urls,
+            )
+        )
+
+    # Sort reverse chronological (newest first)
+    items.sort(key=lambda x: x.created_at, reverse=True)
+    return PresentationHistoryResponse(total_count=len(items), items=items)
+
+
+
