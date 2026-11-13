@@ -5,6 +5,20 @@ import {
 } from "../types/photo_matching";
 import { AwardGroup, DynamicGenerationResponse } from "../types/dynamic_presentation";
 
+const API_BASE = "http://127.0.0.1:8000";
+
+async function parseJsonResponse(res: Response, defaultError: string): Promise<any> {
+  const text = await res.text();
+  if (!text) {
+    throw new Error(`${defaultError} (Status: ${res.status} - Empty response. Ensure FastAPI backend is running on http://127.0.0.1:8000)`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${defaultError} (Status: ${res.status}): ${text.slice(0, 150)}`);
+  }
+}
+
 type WorkflowStep = "upload" | "review_photos" | "review_groups" | "preview";
 
 export function CreatePresentation() {
@@ -62,15 +76,14 @@ export function CreatePresentation() {
     }
 
     try {
-      const res = await fetch("/api/photos/process-dataset", {
+      const res = await fetch(`${API_BASE}/api/photos/process-dataset`, {
         method: "POST",
         body: formData,
       });
+      const data = await parseJsonResponse(res, "Failed to process dataset");
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to process dataset.");
+        throw new Error(data.detail || "Failed to process dataset.");
       }
-      const data: PhotoMatchingSessionResponse = await res.json();
       setSession(data);
       setStep("review_photos");
     } catch (err: any) {
@@ -87,7 +100,7 @@ export function CreatePresentation() {
   ) => {
     if (!session) return;
     try {
-      const res = await fetch(`/api/photos/${session.session_id}/resolve`, {
+      const res = await fetch(`${API_BASE}/api/photos/${session.session_id}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -97,22 +110,21 @@ export function CreatePresentation() {
         }),
       });
 
+      const data = await parseJsonResponse(res, "Failed to resolve association");
       if (!res.ok) {
-        const err = await res.json();
-        if (err.detail && err.detail.includes("CONFIRMATION_REQUIRED")) {
+        if (data.detail && data.detail.includes("CONFIRMATION_REQUIRED")) {
           const userConfirmed = window.confirm(
-            `${err.detail}\n\nDo you want to confirm explicit reuse of this photograph for multiple employees?`
+            `${data.detail}\n\nDo you want to confirm explicit reuse of this photograph for multiple employees?`
           );
           if (userConfirmed) {
             await handleResolve(employeeIndex, fileId, true);
           }
           return;
         }
-        throw new Error(err.detail || "Failed to resolve association.");
+        throw new Error(data.detail || "Failed to resolve association.");
       }
 
-      const updated: PhotoMatchingSessionResponse = await res.json();
-      setSession(updated);
+      setSession(data);
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
@@ -123,12 +135,12 @@ export function CreatePresentation() {
     setIsProcessing(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`/api/photos/${session.session_id}/finalize`, {
+      const res = await fetch(`${API_BASE}/api/photos/${session.session_id}/finalize`, {
         method: "POST",
       });
+      const data = await parseJsonResponse(res, "Cannot finalize dataset");
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Cannot finalize dataset.");
+        throw new Error(data.detail || "Cannot finalize dataset.");
       }
 
       // Group employees by award category locally for review
@@ -162,14 +174,13 @@ export function CreatePresentation() {
     setIsProcessing(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`/api/photos/${session.session_id}/generate-presentation`, {
+      const res = await fetch(`${API_BASE}/api/photos/${session.session_id}/generate-presentation`, {
         method: "POST",
       });
+      const data = await parseJsonResponse(res, "Failed to generate dynamic presentation");
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to generate dynamic presentation.");
+        throw new Error(data.detail || "Failed to generate dynamic presentation.");
       }
-      const data: DynamicGenerationResponse = await res.json();
       setGenerationResult(data);
       setStep("preview");
     } catch (err: any) {
