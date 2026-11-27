@@ -18,28 +18,41 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.env
-.venv
-env/
+
+# Virtual environments
+.venv/
 venv/
+env/
 ENV/
+
+# Node & Frontend
 node_modules/
-dist/
+.vite/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Operating system
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# Database & local test storage
 *.sqlite3
 autohr.db
-storage/
+
+# Scratch and temporary folders
+backend/scratch/
 scratch/
-backend/tests/
-tests/
-test/
-test_*.py
-*_test.py
-*.test.ts
-*.test.tsx
-*.spec.ts
-*.spec.tsx
+
+# Testing & coverage caches
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
 .coverage
 htmlcov/
+
 
