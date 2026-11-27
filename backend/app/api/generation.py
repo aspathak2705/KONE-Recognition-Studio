@@ -329,7 +329,13 @@ def get_presentation_history():
         # Determine presentation name
         record_count = meta.get("record_count", 0)
         award_cats = meta.get("award_categories_count", 0)
-        pres_name = f"KONE Recognition ({record_count} Employees)" if record_count > 0 else f"KONE Recognition ({gen_id[:8]})"
+        template_name = meta.get("template_name")
+        if template_name:
+            pres_name = f"KONE Recognition — {template_name} ({record_count} Employees)"
+        elif record_count > 0:
+            pres_name = f"KONE Recognition ({record_count} Employees)"
+        else:
+            pres_name = f"KONE Recognition ({gen_id[:8]})"
 
         # Determine slide renders
         rendered_urls = meta.get("rendered_slide_urls", [])
