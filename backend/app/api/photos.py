@@ -163,11 +163,15 @@ def finalize_dataset(session_id: str):
 
 
 @router.post("/{session_id}/generate-presentation")
-def generate_presentation_from_photo_session(session_id: str):
+def generate_presentation_from_photo_session(
+    session_id: str,
+    template_id: Optional[str] = Query(None, description="Optional Template Mimic ID for template-aware rendering"),
+):
     """
-    Phase 2 Dynamic Presentation Generator:
-    Takes a finalized photo session and dynamically builds a template-independent
-    editable PPTX presentation with intelligent award grouping and optimal card layout.
+    Presentation Generator:
+    Supports:
+    1. Default Dynamic Mode (template-independent, algorithmically planned)
+    2. Template Mimic Mode (when template_id is supplied, renders via TemplateAwareAdapter)
     """
     if not HEX_ID_PATTERN.match(session_id):
         raise HTTPException(status_code=400, detail="Invalid session identifier format.")
@@ -182,13 +186,44 @@ def generate_presentation_from_photo_session(session_id: str):
             detail="Cannot generate presentation: Dataset is not fully resolved. Every employee must have an assigned photograph.",
         )
 
-    from app.services.dynamic_presentation_service import DynamicPresentationService
     try:
+        # Route to TemplateAwareAdapter if template_id is provided
+        if template_id:
+            from app.services.template_mimic_service import TemplateMimicService
+            from app.services.template_aware_adapter import TemplateAwareAdapter
+
+            tpl_cfg = TemplateMimicService.load_template_config(template_id)
+            if not tpl_cfg:
+                raise HTTPException(status_code=404, detail=f"Template Mimic config '{template_id}' not found.")
+
+            return TemplateAwareAdapter.render_presentation(
+                session_id=session_id,
+                employees=session_res.employee_matches,
+                template_config=tpl_cfg,
+            )
+
+        # Default dynamic generation mode
+        from app.services.dynamic_presentation_service import DynamicPresentationService
         gen_res = DynamicPresentationService.generate_presentation_from_dataset(
             session_id=session_id,
             employees=session_res.employee_matches,
         )
         return gen_res
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Dynamic presentation generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Presentation generation failed: {str(e)}")
+
+
+@router.post("/{session_id}/preview-presentation")
+def preview_presentation_from_photo_session(
+    session_id: str,
+    template_id: Optional[str] = Query(None, description="Optional Template Mimic ID for template-aware rendering"),
+):
+    """
+    Populated Presentation Preview Endpoint:
+    Uses the exact same rendering logic and pipeline output as final PPTX generation
+    to render slides and return real geometry findings & slide preview URLs prior to download.
+    """
+    return generate_presentation_from_photo_session(session_id=session_id, template_id=template_id)
 

@@ -1,9 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   PhotoMatchingSessionResponse,
   PhotoMatchStatus,
 } from "../types/photo_matching";
 import { AwardGroup, DynamicGenerationResponse } from "../types/dynamic_presentation";
+import { TemplateMimicConfig } from "../types/template_mimic";
 
 const API_BASE = "http://127.0.0.1:8000";
 
@@ -33,9 +34,29 @@ export function CreatePresentation() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "attention" | "unmatched">("all");
 
+  // Template Mimic Selection
+  const [availableTemplates, setAvailableTemplates] = useState<TemplateMimicConfig[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [generationMode, setGenerationMode] = useState<"default" | "template">("default");
+
   const dirInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Load available Template Mimic configurations
+    fetch(`${API_BASE}/api/templates/mimic`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setAvailableTemplates(data);
+          if (data.length > 0) {
+            setSelectedTemplateId(data[0].template_id);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleDirectorySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -174,7 +195,8 @@ export function CreatePresentation() {
     setIsProcessing(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/api/photos/${session.session_id}/generate-presentation`, {
+      const queryParam = generationMode === "template" && selectedTemplateId ? `?template_id=${encodeURIComponent(selectedTemplateId)}` : "";
+      const res = await fetch(`${API_BASE}/api/photos/${session.session_id}/generate-presentation${queryParam}`, {
         method: "POST",
       });
       const data = await parseJsonResponse(res, "Failed to generate dynamic presentation");
@@ -571,10 +593,126 @@ export function CreatePresentation() {
                     </span>
                   </div>
                   <div className="text-xs text-gray-600 line-clamp-2">
-                    {g.employees.map((e) => e.employee_name).join(", ")}
+                    {g.employees.map((e: any) => e.employee_name).join(", ")}
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* GENERATION MODE & TEMPLATE MIMIC SELECTOR */}
+          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">
+              Presentation Visual Style
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label
+                className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition ${
+                  generationMode === "default"
+                    ? "border-blue-600 bg-blue-50/50 ring-1 ring-blue-600"
+                    : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="generation_mode"
+                  value="default"
+                  checked={generationMode === "default"}
+                  onChange={() => setGenerationMode("default")}
+                  className="mt-1 text-blue-600"
+                />
+                <div>
+                  <div className="font-semibold text-gray-900 text-sm">Default Dynamic Layout</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Algorithmically optimized cards, KONE standard corporate blue palette, automatic grid adaptation.
+                  </div>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition ${
+                  generationMode === "template"
+                    ? "border-blue-600 bg-blue-50/50 ring-1 ring-blue-600"
+                    : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="generation_mode"
+                  value="template"
+                  checked={generationMode === "template"}
+                  onChange={() => setGenerationMode("template")}
+                  disabled={availableTemplates.length === 0}
+                  className="mt-1 text-blue-600"
+                />
+                <div className="w-full">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 text-sm">Template Mimic Mode</span>
+                    {availableTemplates.length > 0 ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                        {availableTemplates.length} Available
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-gray-400">None Analyzed Yet</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Inherit visual styles, typography, card shapes, and background from an uploaded master template.
+                  </div>
+
+                  {generationMode === "template" && availableTemplates.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Select Master Template:
+                        </label>
+                        <select
+                          value={selectedTemplateId}
+                          onChange={(e) => setSelectedTemplateId(e.target.value)}
+                          className="w-full text-xs border rounded p-1.5 bg-white text-gray-800"
+                        >
+                          {availableTemplates.map((t) => (
+                            <option key={t.template_id} value={t.template_id}>
+                              {t.name} ({t.aspect_ratio}, {t.slide_count} slides)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Template Layout Summary */}
+                      {availableTemplates.find((t) => t.template_id === selectedTemplateId) && (
+                        <div className="p-2.5 rounded bg-white border border-gray-200 text-[11px] space-y-1">
+                          {(() => {
+                            const curTpl = availableTemplates.find((t) => t.template_id === selectedTemplateId)!;
+                            return (
+                              <>
+                                <div className="flex justify-between text-gray-600">
+                                  <span>Dimensions: <b>{curTpl.slide_width_in}" × {curTpl.slide_height_in}" ({curTpl.aspect_ratio})</b></span>
+                                  <span>Slides: <b>{curTpl.slide_count}</b></span>
+                                </div>
+                                <div className="text-gray-600 truncate">
+                                  Primary Font: <b>{curTpl.theme.primary_font || "Standard"}</b>
+                                </div>
+                                <div className="flex items-center gap-1 mt-1">
+                                  <span className="text-gray-500">Theme Colors:</span>
+                                  {curTpl.theme.detected_colors.slice(0, 5).map((col) => (
+                                    <span
+                                      key={col}
+                                      className="inline-block w-3.5 h-3.5 rounded-full border border-gray-300"
+                                      style={{ backgroundColor: `#${col}` }}
+                                      title={`#${col}`}
+                                    />
+                                  ))}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </label>
             </div>
           </div>
 
@@ -585,13 +723,15 @@ export function CreatePresentation() {
             >
               ← Back to Photo Review
             </button>
-            <button
-              onClick={handleGeneratePresentation}
-              disabled={isProcessing}
-              className="px-6 py-2.5 bg-green-600 text-white rounded font-semibold text-sm hover:bg-green-700 disabled:opacity-50"
-            >
-              {isProcessing ? "Generating Presentation..." : "Generate Editable PowerPoint Presentation →"}
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={handleGeneratePresentation}
+                disabled={isProcessing}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded font-semibold text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isProcessing ? "Processing..." : "Preview Presentation Slides →"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -639,7 +779,7 @@ export function CreatePresentation() {
             <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
               <h3 className="text-base font-bold text-gray-900 mb-4">Generated Slide Previews</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {generationResult.rendered_slide_urls.map((url, sIdx) => (
+                {generationResult.rendered_slide_urls.map((url: string, sIdx: number) => (
                   <div key={url} className="border rounded shadow-sm overflow-hidden bg-gray-50">
                     <img src={url} alt={`Slide ${sIdx + 1}`} className="w-full h-auto object-cover border-b" />
                     <div className="p-2 text-xs font-semibold text-gray-600 text-center">
