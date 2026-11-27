@@ -54,5 +54,24 @@ scratch/
 .hypothesis/
 .coverage
 htmlcov/
+*.cover
+
+# Runtime storage & generated artifacts
+storage/
+backend/storage/
+uploads/
+generated/
+*.pptx
+*.xlsx
+*.csv
+
+# Audit files, execution logs & walkthrough reports
+*.log
+*.audit
+*walkthrough*.md
+*audit*.md
+*report*.md
+!README.md
+
 
 
